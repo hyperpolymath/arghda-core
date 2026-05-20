@@ -3,7 +3,7 @@ name = "arghda-core"
 version = "0.1.0"
 edition = "2021"
 description = "Lightweight proof-workspace manager for Agda"
-license = "PMPL-1.0-or-later"
+license = "MPL-2.0"
 repository = "https://github.com/hyperpolymath/echo-types"
 
 [[bin]]
