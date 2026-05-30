@@ -22,8 +22,8 @@ impl LintRule for OrphanModule {
             return Ok(());
         }
 
-        let reachable = transitive_imports(ctx.entry_module, ctx.include_root)
-            .with_context(|| {
+        let reachable =
+            transitive_imports(ctx.entry_module, ctx.include_root).with_context(|| {
                 format!(
                     "computing transitive imports from {}",
                     ctx.entry_module.display()
@@ -111,8 +111,8 @@ fn transitive_imports(entry: &Path, include_root: &Path) -> Result<HashSet<Strin
 /// top-level forms of `file`. Tolerant: stops at the first token after
 /// `import`; ignores `hiding`, `using`, `as`, `public` modifiers.
 fn direct_imports(file: &Path) -> Result<Vec<String>> {
-    let contents = fs::read_to_string(file)
-        .with_context(|| format!("reading {}", file.display()))?;
+    let contents =
+        fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
     let mut out = Vec::new();
     for line in contents.lines() {
         let trimmed = line.trim_start();
@@ -132,9 +132,12 @@ fn direct_imports(file: &Path) -> Result<Vec<String>> {
                 continue;
             }
         }
-        let Some(module) = tokens.get(i + 1) else { continue };
+        let Some(module) = tokens.get(i + 1) else {
+            continue;
+        };
         // Strip trailing punctuation Agda never allows in module paths.
-        let cleaned = module.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '_');
+        let cleaned =
+            module.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '_');
         if cleaned.is_empty() {
             continue;
         }

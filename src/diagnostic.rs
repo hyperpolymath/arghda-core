@@ -25,7 +25,10 @@ pub struct LintReport {
 
 impl LintReport {
     pub fn new(file: PathBuf) -> Self {
-        Self { file, diagnostics: Vec::new() }
+        Self {
+            file,
+            diagnostics: Vec::new(),
+        }
     }
 
     pub fn push(&mut self, d: Diagnostic) {
@@ -33,14 +36,20 @@ impl LintReport {
     }
 
     pub fn has_hard_block(&self) -> bool {
-        self.diagnostics.iter().any(|d| d.severity == Severity::HardBlock)
+        self.diagnostics
+            .iter()
+            .any(|d| d.severity == Severity::HardBlock)
     }
 
     pub fn hard_blocks(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics.iter().filter(|d| d.severity == Severity::HardBlock)
+        self.diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::HardBlock)
     }
 
     pub fn warns(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics.iter().filter(|d| d.severity == Severity::Warn)
+        self.diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Warn)
     }
 }

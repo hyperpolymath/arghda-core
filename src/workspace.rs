@@ -73,8 +73,8 @@ impl Workspace {
     pub fn list(&self, state: State) -> Result<Vec<PathBuf>> {
         let dir = self.state_dir(state);
         let mut out = Vec::new();
-        for entry in fs::read_dir(&dir)
-            .with_context(|| format!("reading state dir {}", dir.display()))?
+        for entry in
+            fs::read_dir(&dir).with_context(|| format!("reading state dir {}", dir.display()))?
         {
             let entry = entry?;
             if entry.file_type()?.is_file() {

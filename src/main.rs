@@ -1,13 +1,17 @@
 use anyhow::{Context, Result};
-use arghda_core::{default_rules, run_lints, watcher, Workspace};
 use arghda_core::lint::LintContext;
+use arghda_core::{default_rules, run_lints, watcher, Workspace};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use walkdir::WalkDir;
 
 #[derive(Parser)]
-#[command(name = "arghda", version, about = "Proof-workspace manager (Agda, v0.1)")]
+#[command(
+    name = "arghda",
+    version,
+    about = "Proof-workspace manager (Agda, v0.1)"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -16,9 +20,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Create the four-state workspace layout at PATH.
-    Init {
-        path: PathBuf,
-    },
+    Init { path: PathBuf },
     /// Lint every `.agda` file under PATH without moving anything.
     Scan {
         /// Directory containing `.agda` files; treated as the include root.
@@ -32,9 +34,7 @@ enum Cmd {
         json: bool,
     },
     /// Watch `inbox/` and `working/` in a workspace; print events.
-    Watch {
-        workspace: PathBuf,
-    },
+    Watch { workspace: PathBuf },
 }
 
 fn main() -> Result<()> {
@@ -64,19 +64,25 @@ fn scan(include_root: &Path, entry: Option<&Path>, json: bool) -> Result<()> {
     }
 
     let rules = default_rules();
-    let ctx = LintContext { include_root, entry_module: entry };
+    let ctx = LintContext {
+        include_root,
+        entry_module: entry,
+    };
 
     let mut reports = Vec::new();
     let mut hard_blocks = 0usize;
     let mut warns = 0usize;
 
-    for entry in WalkDir::new(include_root).into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(include_root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("agda") {
             continue;
         }
-        let report = run_lints(path, &ctx, &rules)
-            .with_context(|| format!("linting {}", path.display()))?;
+        let report =
+            run_lints(path, &ctx, &rules).with_context(|| format!("linting {}", path.display()))?;
         hard_blocks += report.hard_blocks().count();
         warns += report.warns().count();
         reports.push(report);

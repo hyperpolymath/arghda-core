@@ -39,7 +39,10 @@ fn collect_hard_blocks(include_root: &Path) -> Vec<(String, String)> {
     };
 
     let mut hits = Vec::new();
-    for entry in WalkDir::new(include_root).into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(include_root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("agda") {
             continue;
@@ -72,17 +75,16 @@ fn wellformed_fixture_passes_both_default_rules() {
 #[test]
 fn orphan_module_flagged_when_unreachable_from_entry() {
     let hits = collect_hard_blocks(&fixture("orphan"));
-    let orphan_hits: Vec<_> = hits
-        .iter()
-        .filter(|(_f, r)| r == "orphan-module")
-        .collect();
+    let orphan_hits: Vec<_> = hits.iter().filter(|(_f, r)| r == "orphan-module").collect();
     assert!(
         orphan_hits.iter().any(|(f, _)| f == "Orphan.agda"),
         "orphan-module rule must flag Orphan.agda; hits were: {:?}",
         hits
     );
     assert!(
-        !orphan_hits.iter().any(|(f, _)| f == "Used.agda" || f == "All.agda"),
+        !orphan_hits
+            .iter()
+            .any(|(f, _)| f == "Used.agda" || f == "All.agda"),
         "orphan-module rule must NOT flag reachable files; hits were: {:?}",
         hits
     );

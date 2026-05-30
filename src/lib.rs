@@ -9,5 +9,5 @@ pub mod watcher;
 pub mod workspace;
 
 pub use diagnostic::{Diagnostic, LintReport, Severity};
-pub use lint::{LintRule, default_rules, run_lints};
+pub use lint::{default_rules, run_lints, LintRule};
 pub use workspace::{State, Workspace};

@@ -14,8 +14,8 @@ impl LintRule for SafePragma {
     }
 
     fn run(&self, file: &Path, _ctx: &LintContext<'_>, report: &mut LintReport) -> Result<()> {
-        let contents = fs::read_to_string(file)
-            .with_context(|| format!("reading {}", file.display()))?;
+        let contents =
+            fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
 
         let mut safe_seen = false;
         let mut without_k_seen = false;

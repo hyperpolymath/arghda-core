@@ -9,7 +9,10 @@ use std::sync::mpsc;
 pub fn watch(
     path: impl AsRef<Path>,
     recursive: bool,
-) -> Result<(RecommendedWatcher, mpsc::Receiver<notify::Result<notify::Event>>)> {
+) -> Result<(
+    RecommendedWatcher,
+    mpsc::Receiver<notify::Result<notify::Event>>,
+)> {
     let (tx, rx) = mpsc::channel();
     let mut watcher = notify::recommended_watcher(tx)?;
     let mode = if recursive {
