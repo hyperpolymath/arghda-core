@@ -1,0 +1,220 @@
+// SPDX-License-Identifier: CC-BY-4.0
+// SPDX-FileCopyrightText: 2025-2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= ArghDA MVP Specification
+:toc: macro
+:toclevels: 2
+
+toc::[]
+
+== Purpose
+
+ArghDA is a lightweight proof-workspace manager. Initial target:
+Agda. It exists to close a specific user-experience gap that
+`agda-mode` and `agda-language-server` do not: making the
+_lifecycle_ of a proof (inbox → working → proven | rejected) a
+first-class, visible object, with a thin linter that catches the
+silent-failure class _before_ the typechecker.
+
+Scope discipline: small tool, narrow job. Not a proof assistant,
+not a replacement for `agda-mode`, not a tactic framework.
+
+== Motivation
+
+From echo-types sessions (see `docs/buchholz-plan.adoc`), the
+operator repeatedly hit a specific failure mode:
+
+* a proof file exists, looks like it typechecked, but is missing
+  `--safe` / `--without-K`, or is not imported from `All.agda`,
+  or is not pinned in `Smoke.agda`
+* the "did it really work?" question is answered only by running
+  the whole suite, which is slow and emotionally punishing
+* there is no visible pipeline: no inbox, no "in-progress", no
+  "proven" tag; just a flat directory of `.agda` files
+
+The existing ecosystem (see ArghDA scout report: `coq-lsp`,
+`VSCoq`, `Alectryon`, `LeanInk`, `Mathlib stats`, `Isabelle/jEdit
+PIDE`, `agda-language-server`, `agda-unused`) gives excellent
+per-file UX and some library-level dependency views, but nobody
+treats proofs as _items flowing through pipeline stages_. That is
+the novel contribution.
+
+== Split
+
+Two layers, developed and published as two packages:
+
+`arghda-core`:: Language-agnostic engine. Rust. No UI. Exposes a
+CLI, a library API, and a JSON event stream. Runs in CI, standalone,
+or embedded.
+
+`arghda-panll`:: PanLL presentation layer. Gossamer webview +
+ReScript panel consuming `arghda-core`'s event stream. Lives in the
+PanLL surface, probably adjacent to Pane-W.
+
+Rationale for the split:
+
+* Proof triage is useful outside PanLL (students, CI, large collabs).
+* Testing `arghda-core` doesn't require booting PanLL.
+* PanLL gains a polished dependency rather than an internal subsystem.
+* Matches PanLL's existing pattern with `panll_beam`.
+
+== State machine (core)
+
+Four states, implemented as four directories under a workspace root:
+
+[source]
+----
+<workspace>/
+  inbox/          -- new or returning proof files
+  working/        -- operator has picked this up
+  proven/         -- typecheck + lint clean
+  rejected/       -- typecheck failed, or lint-block, or manual reject
+----
+
+Transitions are _file moves_. This keeps the ground truth on disk,
+makes recovery obvious (`mv` it back), and survives ArghDA crashing.
+
+Transition rules:
+
+[cols="1,2,3"]
+|===
+| From | To | Trigger
+
+| inbox | working | operator claim (explicit)
+| working | proven | typecheck clean AND lint clean
+| working | rejected | typecheck failed OR lint-hard-block
+| rejected | inbox | manual re-queue
+| proven | inbox | upstream change invalidates (see DAG below)
+|===
+
+Every transition emits a JSON event to a rolling log under
+`<workspace>/.arghda/events.jsonl`.
+
+== Linter rules (Agda, v0)
+
+The linter targets the _silent-failure_ class — cases where Agda
+appears to succeed but the file is not actually in the verified
+suite. Rules, each emitting a structured diagnostic:
+
+* `missing-safe-pragma` — file lacks `{-# OPTIONS --safe --without-K #-}`
+* `missing-without-k` — `--safe` without `--without-K` (or vice versa)
+* `orphan-module` — module not imported (transitively) from `All.agda`
+* `unpinned-headline` — module exports a theorem matching a
+  headline-naming pattern (operator-configurable regex) but the name
+  is not pinned in `Smoke.agda` via a `using` clause
+* `unjustified-postulate` — `postulate` block without an adjacent
+  comment line starting with `-- JUSTIFY:`
+* `unused-import` — shell out to `agda-unused` and re-emit findings
+* `tab-mix` — file mixes tabs and spaces at line start
+
+Severity: `hard-block` (forbids `working → proven`) vs `warn`
+(surfaced but non-blocking). Default: `missing-safe-pragma`,
+`orphan-module`, `unjustified-postulate` are hard-block; the rest
+are warn.
+
+Non-goals for v0: semantic linting, redundancy detection,
+style-guide enforcement beyond whitespace.
+
+== DAG JSON schema (v0)
+
+Emitted by `arghda-core dag` as a single JSON document. Consumable by
+the PanLL panel, a static HTML viewer, or third-party tools.
+
+[source,json]
+----
+{
+  "version": "0.1",
+  "workspace": "/path/to/workspace",
+  "generated_at": "ISO-8601",
+  "nodes": [
+    {
+      "id": "Ordinal.Closure",
+      "file": "proofs/agda/Ordinal/Closure.agda",
+      "status": "proven",
+      "lint": { "hard_block": [], "warn": [] },
+      "headlines": ["C-monotone"]
+    }
+  ],
+  "edges": [
+    { "from": "Ordinal.Closure", "to": "Ordinal.Base", "kind": "imports" }
+  ],
+  "blocked": [
+    {
+      "node": "Ordinal.Buchholz.Psi",
+      "blocked_by": ["Ordinal.Buchholz.Closure"],
+      "reason": "prereq not proven"
+    }
+  ]
+}
+----
+
+Renderer is a separate concern; the panel consumes this verbatim.
+
+== Integration points
+
+* **LSP** (coq-lsp pattern) — per-file editor feedback.
+* **PIDE async model** (Isabelle) — asynchronous document state
+  for the "checking now" sub-state within `working`.
+* **`agda --only-scope-checking`** — cheap pre-pass for quick
+  syntactic / import validation before full typecheck.
+* **`agda-unused`** — shell out; re-emit diagnostics in the
+  ArghDA diagnostic format.
+* **Alectryon-style rendering** (future) — static HTML render of
+  proof states as a by-product of `proven` transition.
+
+== Non-goals (MVP)
+
+* Tactic language.
+* Writing proofs for the operator.
+* IDE replacement.
+* Multi-prover support (Coq/Lean/Isabelle postponed to v0.2).
+* Distributed execution. A single workspace, a single machine.
+
+== First sprint (v0.1)
+
+Ordered by unblock-value:
+
+. `arghda-core` Rust crate skeleton; `Workspace::open(path)` API.
+. Filesystem watcher over `inbox/` and `working/` using `notify`.
+. Two linter rules: `missing-safe-pragma`, `orphan-module`.
+. `arghda-core check <file>` command: runs agda, captures exit code,
+  emits a `LintReport` JSON.
+. `arghda-core promote <file>` / `arghda-core reject <file>`:
+  the state-machine CLI.
+. `arghda-core dag` emitting the schema above for the current
+  workspace.
+. Minimal end-to-end smoke test over `echo-types` itself as the
+  first real workspace.
+
+PanLL panel (`arghda-panll`) is v0.2 and deliberately not in this
+sprint. The CLI + JSON is the interface contract; the panel is a
+consumer.
+
+== Open questions
+
+* Language choice for `arghda-core`: Rust (matches PanLL stack) vs
+  Zig (matches Gossamer / Burble). Default: Rust, pending operator
+  pushback.
+* Should the `proven` state record a content hash so upstream
+  changes can invalidate it automatically? Default: yes, SHA-256
+  of the file plus imports.
+* Naming convention for "headlines" — regex default
+  `^[a-z][A-Za-z0-9-]*$` with export-only filter, operator-overridable
+  per-workspace in `.arghda/config.toml`.
+
+== Acceptance criteria for v0.1
+
+* End-to-end demo: take `echo-types` at its current commit, place
+  all `*.agda` files into `inbox/`, run `arghda-core` against it,
+  observe that every file moves to `proven/` with no hard-blocks,
+  and that the emitted DAG matches the actual import graph.
+* Introduce one synthetic bug (delete `--safe` from a file): observe
+  that file lands in `rejected/` with the correct diagnostic.
+* Introduce one synthetic orphan (new `.agda` not imported from
+  `All.agda`): observe `orphan-module` hard-block.
+
+== References
+
+* ArghDA scout report (this session): existing proof-workspace
+  landscape across Coq/Rocq, Lean 4, Isabelle, Agda.
+* `docs/buchholz-plan.adoc` — the motivating proof pipeline that
+  surfaced the silent-failure gap.
