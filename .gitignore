@@ -1,0 +1,14 @@
+# Rust build artefacts
+target/
+
+# Editor / tooling backups
+*.bak
+*~
+
+# Local Claude state
+.claude/
+
+# direnv / nix local cache
+.direnv/
+result
+result-*

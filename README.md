@@ -1,8 +1,9 @@
 # arghda-core
 
-Lightweight proof-workspace manager for Agda. This crate parks inside
-`echo-types` until its own repo exists; see `docs/arghda-spec.adoc` at
-the echo-types root for the design.
+Lightweight proof-workspace manager for Agda. Extracted from
+[`hyperpolymath/echo-types`](https://github.com/hyperpolymath/echo-types)
+to its own repository on 2026-05-30 — see echo-types#159 for the move
+record.
 
 ## v0.1 scope
 
@@ -19,17 +20,36 @@ Not yet: `promote`, `reject`, `dag` (v0.1.x).
 ## Build
 
 ```
-cd arghda-core
 cargo build
 cargo test
 ```
 
-## Smoke against echo-types
+## Smoke against an Agda workspace
 
 ```
-cd arghda-core
-cargo run -- scan ../proofs/agda
+cargo run -- scan path/to/your/agda/sources
 ```
 
-Expected: every `.agda` file passes `missing-safe-pragma`; `orphan-module`
-checks against `../proofs/agda/All.agda`.
+Expected output enumerates per-file lint hits. With no `All.agda`
+present, `orphan-module` is a no-op; with one present, modules
+unreachable from `All.agda` get flagged.
+
+## Ecosystem context
+
+Part of the [hyperpolymath ecosystem](https://github.com/hyperpolymath).
+The original design motivation was the echo-types proof pipeline
+(triage folders `inbox → working → proven → rejected`), but `arghda`
+operates on any `--safe --without-K` Agda workspace; it has no
+echo-types-specific code.
+
+Adjacent projects:
+
+- [echo-types](https://github.com/hyperpolymath/echo-types) — the
+  Agda library that motivated arghda's design; arghda is not a
+  build-dependency.
+- [absolute-zero](https://github.com/hyperpolymath/absolute-zero) —
+  a sister Agda library with the same `--safe --without-K` discipline.
+
+## License
+
+MPL-2.0. SPDX headers on each source file.

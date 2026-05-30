@@ -1,38 +1,45 @@
-//! End-to-end smoke test: run lints over the echo-types Agda suite and
-//! verify v0.1 expectations.
+//! End-to-end smoke tests for the v0.1 lint pack.
 //!
-//! Expectation: every `.agda` file in `proofs/agda` passes
-//! `missing-safe-pragma` and `orphan-module` relative to `All.agda`.
+//! Each test runs the default rule pack against a self-contained
+//! fixture directory under `tests/fixtures/`. The fixtures stand in
+//! for a real Agda workspace; they are not type-checked (arghda only
+//! reads them as text). When arghda lived inside echo-types the smoke
+//! test ran against echo-types' real `proofs/agda/All.agda`; after the
+//! 2026-05-30 extraction the integration target became these
+//! deliberately-tiny fixtures so the test stays self-contained.
 
 use arghda_core::lint::{default_rules, LintContext};
 use arghda_core::{run_lints, Severity};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-fn echo_types_root() -> PathBuf {
-    // arghda-core sits at echo-types/arghda-core/.
+fn fixture(name: &str) -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
+    p.push("tests");
+    p.push("fixtures");
+    p.push(name);
     p
 }
 
-#[test]
-fn echo_types_passes_default_rules() {
-    let root = echo_types_root();
-    let include_root = root.join("proofs").join("agda");
+/// Run the default rule pack against every `.agda` file under
+/// `include_root`, partitioning hits by rule name. Each hit becomes
+/// `(file_basename, rule_name)`.
+fn collect_hard_blocks(include_root: &Path) -> Vec<(String, String)> {
     let entry = include_root.join("All.agda");
-
-    assert!(entry.is_file(), "All.agda not found at {}", entry.display());
+    assert!(
+        entry.is_file(),
+        "fixture invariant: {} must contain All.agda",
+        include_root.display()
+    );
 
     let rules = default_rules();
     let ctx = LintContext {
-        include_root: &include_root,
+        include_root,
         entry_module: &entry,
     };
 
-    let mut hard_blocks = Vec::new();
-
-    for entry in WalkDir::new(&include_root).into_iter().filter_map(|e| e.ok()) {
+    let mut hits = Vec::new();
+    for entry in WalkDir::new(include_root).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("agda") {
             continue;
@@ -40,14 +47,62 @@ fn echo_types_passes_default_rules() {
         let report = run_lints(path, &ctx, &rules).expect("lint run failed");
         for d in report.diagnostics {
             if d.severity == Severity::HardBlock {
-                hard_blocks.push(format!("{}: {} — {}", path.display(), d.rule, d.message));
+                let basename = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("?")
+                    .to_string();
+                hits.push((basename, d.rule));
             }
         }
     }
+    hits
+}
 
+#[test]
+fn wellformed_fixture_passes_both_default_rules() {
+    let hits = collect_hard_blocks(&fixture("wellformed"));
     assert!(
-        hard_blocks.is_empty(),
-        "expected no hard-blocks, got:\n{}",
-        hard_blocks.join("\n")
+        hits.is_empty(),
+        "wellformed fixture must produce no hard-blocks, got: {:?}",
+        hits
+    );
+}
+
+#[test]
+fn orphan_module_flagged_when_unreachable_from_entry() {
+    let hits = collect_hard_blocks(&fixture("orphan"));
+    let orphan_hits: Vec<_> = hits
+        .iter()
+        .filter(|(_f, r)| r == "orphan-module")
+        .collect();
+    assert!(
+        orphan_hits.iter().any(|(f, _)| f == "Orphan.agda"),
+        "orphan-module rule must flag Orphan.agda; hits were: {:?}",
+        hits
+    );
+    assert!(
+        !orphan_hits.iter().any(|(f, _)| f == "Used.agda" || f == "All.agda"),
+        "orphan-module rule must NOT flag reachable files; hits were: {:?}",
+        hits
+    );
+}
+
+#[test]
+fn missing_safe_pragma_flagged_when_pragma_absent() {
+    let hits = collect_hard_blocks(&fixture("missing_pragma"));
+    let pragma_hits: Vec<_> = hits
+        .iter()
+        .filter(|(_f, r)| r == "missing-safe-pragma")
+        .collect();
+    assert!(
+        pragma_hits.iter().any(|(f, _)| f == "Bad.agda"),
+        "missing-safe-pragma rule must flag Bad.agda; hits were: {:?}",
+        hits
+    );
+    assert!(
+        !pragma_hits.iter().any(|(f, _)| f == "All.agda"),
+        "missing-safe-pragma rule must NOT flag well-formed All.agda; hits were: {:?}",
+        hits
     );
 }
