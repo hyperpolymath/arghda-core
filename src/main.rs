@@ -135,15 +135,11 @@ fn watch(workspace_path: &Path) -> Result<()> {
     println!("press ctrl-c to stop");
 
     loop {
-        if let Ok(ev) = rx_inbox.recv_timeout(Duration::from_millis(200)) {
-            if let Ok(ev) = ev {
-                println!("inbox:   {:?} {:?}", ev.kind, ev.paths);
-            }
+        if let Ok(Ok(ev)) = rx_inbox.recv_timeout(Duration::from_millis(200)) {
+            println!("inbox:   {:?} {:?}", ev.kind, ev.paths);
         }
-        if let Ok(ev) = rx_working.recv_timeout(Duration::from_millis(200)) {
-            if let Ok(ev) = ev {
-                println!("working: {:?} {:?}", ev.kind, ev.paths);
-            }
+        if let Ok(Ok(ev)) = rx_working.recv_timeout(Duration::from_millis(200)) {
+            println!("working: {:?} {:?}", ev.kind, ev.paths);
         }
     }
 }
