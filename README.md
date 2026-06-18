@@ -23,6 +23,13 @@ record.
     `NON_TERMINATING`, `NO_TERMINATION_CHECK`) and trust primitives
     (`believe_me`/`primTrustMe`)
   - `tab-mix` (warn) — a tab in leading whitespace
+  - `unpinned-headline` (warn) — a top-level theorem whose name matches the
+    headline pattern is not pinned in any `Smoke.agda` via a `using ( … )`
+    clause (the estate "every headline pinned in Smoke" discipline). The
+    pattern is operator-configurable (`--headline-pattern <regex>`);
+    its default `^[a-z][A-Za-z0-9-]*$` is deliberately broad, so operators
+    narrow it to their own headline-naming convention. Self-skips when no
+    `Smoke.agda` is in scope (e.g. a single-file `check`)
 - Workspace state machine — transitions are file moves, each logged to
   `.arghda/events.jsonl` (`claim`, `promote`, `reject`, `requeue`,
   `invalidate`)
@@ -44,11 +51,12 @@ plus standalone scratch files. `scan` also flags the files deliberately
 outside the `--safe --without-K` kernel cone (`Fidelity.agda`, the cubical
 island, the postulated shadow).
 
-Not yet: `unpinned-headline` (needs `Smoke.agda` parsing + a configurable
-regex) and `unused-import` (shells out to `agda-unused`); content-hash
-invalidation of `proven`; the Groove service manifest; and the
-`.machine_readable/` RSR retrofit. (`missing-without-k` is subsumed by
-`missing-safe-pragma`, which already reports a missing `--without-K`.)
+Not yet: `unused-import` (shells out to `agda-unused`); the DAG `headlines`
+field (the extractor now exists for `unpinned-headline`, but the per-node
+`headlines` array in the DAG schema is still unpopulated); persisting the
+headline pattern in `.arghda/config.toml` (currently a CLI flag); the Groove
+service manifest. (`missing-without-k` is subsumed by `missing-safe-pragma`,
+which already reports a missing `--without-K`.)
 
 ## Build
 

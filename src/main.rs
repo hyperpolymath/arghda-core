@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, check_file, default_rules, event, graph, run_lints, watcher, LintRule, State,
-    Workspace,
+    build_dag, check_file, default_rules, event, graph, rules_with_config, run_lints, watcher,
+    LintRule, RuleConfig, State, Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -35,6 +35,10 @@ enum Cmd {
         /// `All.agda`/`Smoke.agda` discovered under PATH.
         #[arg(long)]
         entry: Vec<PathBuf>,
+        /// Regex a name must match to count as a pinnable headline
+        /// (`unpinned-headline` rule). Defaults to the spec pattern.
+        #[arg(long)]
+        headline_pattern: Option<String>,
         /// Emit the report as JSON instead of human-readable text.
         #[arg(long)]
         json: bool,
@@ -58,6 +62,10 @@ enum Cmd {
         /// `All.agda`/`Smoke.agda` discovered under PATH.
         #[arg(long)]
         entry: Vec<PathBuf>,
+        /// Regex a name must match to count as a pinnable headline
+        /// (`unpinned-headline` rule). Defaults to the spec pattern.
+        #[arg(long)]
+        headline_pattern: Option<String>,
     },
     /// Claim a file: inbox -> working.
     Claim { workspace: PathBuf, file: String },
@@ -89,13 +97,22 @@ fn main() -> Result<()> {
             let ws = Workspace::init(&path)?;
             println!("initialised workspace at {}", ws.root().display());
         }
-        Cmd::Scan { path, entry, json } => scan(&path, &entry, json)?,
+        Cmd::Scan {
+            path,
+            entry,
+            headline_pattern,
+            json,
+        } => scan(&path, &entry, headline_pattern.as_deref(), json)?,
         Cmd::Check {
             file,
             include_root,
             json,
         } => check(&file, include_root.as_deref(), json)?,
-        Cmd::Dag { path, entry } => dag(&path, &entry)?,
+        Cmd::Dag {
+            path,
+            entry,
+            headline_pattern,
+        } => dag(&path, &entry, headline_pattern.as_deref())?,
         Cmd::Claim { workspace, file } => {
             transition(&workspace, &file, State::Inbox, State::Working)?
         }
@@ -121,8 +138,13 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn scan(include_root: &Path, entry: &[PathBuf], json: bool) -> Result<()> {
-    let (roots, rules) = resolve_roots_and_rules(include_root, entry)?;
+fn scan(
+    include_root: &Path,
+    entry: &[PathBuf],
+    headline_pattern: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern)?;
     let ctx = LintContext {
         include_root,
         entry_modules: &roots,
@@ -241,8 +263,8 @@ fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn dag(include_root: &Path, entry: &[PathBuf]) -> Result<()> {
-    let (roots, rules) = resolve_roots_and_rules(include_root, entry)?;
+fn dag(include_root: &Path, entry: &[PathBuf], headline_pattern: Option<&str>) -> Result<()> {
+    let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern)?;
     let doc = build_dag(include_root, &roots, &rules)?;
     println!("{}", serde_json::to_string_pretty(&doc)?);
     Ok(())
@@ -256,6 +278,7 @@ fn dag(include_root: &Path, entry: &[PathBuf]) -> Result<()> {
 fn resolve_roots_and_rules(
     include_root: &Path,
     entry: &[PathBuf],
+    headline_pattern: Option<&str>,
 ) -> Result<(Vec<PathBuf>, RuleSet)> {
     for e in entry {
         if !e.is_file() {
@@ -267,17 +290,21 @@ fn resolve_roots_and_rules(
     } else {
         entry.to_vec()
     };
+    let mut cfg = RuleConfig::default();
+    if let Some(p) = headline_pattern {
+        cfg.headline_pattern = p.to_string();
+    }
     let rules: RuleSet = if roots.is_empty() {
         eprintln!(
             "note: no root modules (All.agda/Smoke.agda) found under {}; skipping orphan-module rule",
             include_root.display()
         );
-        default_rules()
+        rules_with_config(&cfg)?
             .into_iter()
             .filter(|r| r.name() != "orphan-module")
             .collect()
     } else {
-        default_rules()
+        rules_with_config(&cfg)?
     };
     Ok((roots, rules))
 }
