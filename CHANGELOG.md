@@ -24,6 +24,13 @@ All notable changes to arghda-core are documented here. The format follows
 - Lint rules: `unjustified-postulate` (hard-block), `escape-hatch` (warn:
   `TERMINATING`-family pragmas + `believe_me` / `primTrustMe`), `tab-mix`
   (warn).
+- `unpinned-headline` (warn): flags a top-level theorem whose name matches
+  the headline pattern but is not pinned in any `Smoke.agda` via a
+  `using ( … )` clause. The pattern is operator-configurable via
+  `--headline-pattern <regex>` on `scan` / `dag` (default
+  `^[a-z][A-Za-z0-9-]*$`, per the spec). Detects top-level (column-0)
+  signatures only, which gives the export-only filter for free; tolerant of
+  multi-line `using` lists; self-skips when no `Smoke.agda` is in scope.
 - RSR scaffolding: `.machine_readable/6a2/` artefacts, `0-AI-MANIFEST.a2ml`,
   `Justfile`, `.well-known/`, and community-health files.
 - Content-hash invalidation of `proven`: promotion records a SHA-256 of the

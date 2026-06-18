@@ -20,5 +20,5 @@ pub use dag::{build as build_dag, DagDocument};
 pub use diagnostic::{Diagnostic, LintReport, Severity};
 pub use event::{Event, EventKind};
 pub use graph::{build as build_graph, ImportGraph};
-pub use lint::{default_rules, run_lints, LintRule};
+pub use lint::{default_rules, rules_with_config, run_lints, LintRule, RuleConfig};
 pub use workspace::{StaleEntry, State, Workspace};
