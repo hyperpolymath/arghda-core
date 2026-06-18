@@ -3,6 +3,7 @@ use anyhow::Result;
 use std::path::Path;
 
 pub mod orphan_module;
+pub mod postulate;
 pub mod safe_pragma;
 
 /// Context handed to every rule.
@@ -24,6 +25,7 @@ pub fn default_rules() -> Vec<Box<dyn LintRule>> {
     vec![
         Box::new(safe_pragma::SafePragma),
         Box::new(orphan_module::OrphanModule),
+        Box::new(postulate::UnjustifiedPostulate),
     ]
 }
 

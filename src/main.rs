@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
-use arghda_core::{default_rules, run_lints, watcher, Workspace};
+use arghda_core::{
+    build_dag, check_file, default_rules, event, run_lints, watcher, LintRule, State, Workspace,
+};
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -33,6 +35,37 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Typecheck one file with Agda and lint it; report the verdict.
+    Check {
+        /// The `.agda` file to check.
+        file: PathBuf,
+        /// Agda include root. Defaults to the file's directory.
+        #[arg(long)]
+        include_root: Option<PathBuf>,
+        /// Emit the report as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Emit the dependency DAG (JSON) for the source tree at PATH.
+    Dag {
+        /// Directory containing `.agda` files; treated as the include root.
+        path: PathBuf,
+        /// Entry module for orphan detection. Defaults to `<path>/All.agda`.
+        #[arg(long)]
+        entry: Option<PathBuf>,
+    },
+    /// Claim a file: inbox -> working.
+    Claim { workspace: PathBuf, file: String },
+    /// Promote a file: working -> proven.
+    Promote { workspace: PathBuf, file: String },
+    /// Reject a file: working -> rejected.
+    Reject { workspace: PathBuf, file: String },
+    /// Re-queue a file: rejected -> inbox.
+    Requeue { workspace: PathBuf, file: String },
+    /// Invalidate a proven file: proven -> inbox.
+    Invalidate { workspace: PathBuf, file: String },
+    /// Print the workspace event log.
+    Events { workspace: PathBuf },
     /// Watch `inbox/` and `working/` in a workspace; print events.
     Watch { workspace: PathBuf },
 }
@@ -45,6 +78,28 @@ fn main() -> Result<()> {
             println!("initialised workspace at {}", ws.root().display());
         }
         Cmd::Scan { path, entry, json } => scan(&path, entry.as_deref(), json)?,
+        Cmd::Check {
+            file,
+            include_root,
+            json,
+        } => check(&file, include_root.as_deref(), json)?,
+        Cmd::Dag { path, entry } => dag(&path, entry.as_deref())?,
+        Cmd::Claim { workspace, file } => {
+            transition(&workspace, &file, State::Inbox, State::Working)?
+        }
+        Cmd::Promote { workspace, file } => {
+            transition(&workspace, &file, State::Working, State::Proven)?
+        }
+        Cmd::Reject { workspace, file } => {
+            transition(&workspace, &file, State::Working, State::Rejected)?
+        }
+        Cmd::Requeue { workspace, file } => {
+            transition(&workspace, &file, State::Rejected, State::Inbox)?
+        }
+        Cmd::Invalidate { workspace, file } => {
+            transition(&workspace, &file, State::Proven, State::Inbox)?
+        }
+        Cmd::Events { workspace } => events(&workspace)?,
         Cmd::Watch { workspace } => watch(&workspace)?,
     }
     Ok(())
@@ -106,11 +161,7 @@ fn scan(include_root: &Path, entry: Option<&Path>, json: bool) -> Result<()> {
             }
             println!("{}", report.file.display());
             for d in &report.diagnostics {
-                let tag = match d.severity {
-                    arghda_core::Severity::HardBlock => "BLOCK",
-                    arghda_core::Severity::Warn => "warn",
-                };
-                println!("  [{}] {}: {}", tag, d.rule, d.message);
+                println!("  [{}] {}: {}", sev_tag(d.severity), d.rule, d.message);
             }
         }
         println!(
@@ -123,10 +174,121 @@ fn scan(include_root: &Path, entry: Option<&Path>, json: bool) -> Result<()> {
     Ok(())
 }
 
+fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
+    if !file.is_file() {
+        anyhow::bail!("file not found: {}", file.display());
+    }
+    let root_buf;
+    let include_root = match include_root {
+        Some(r) => r,
+        None => {
+            root_buf = file.parent().unwrap_or(Path::new(".")).to_path_buf();
+            &root_buf
+        }
+    };
+
+    // The orphan rule self-skips when the entry module is the file itself,
+    // which is exactly what a single-file check wants.
+    let rules = default_rules();
+    let ctx = LintContext {
+        include_root,
+        entry_module: file,
+    };
+    let report =
+        run_lints(file, &ctx, &rules).with_context(|| format!("linting {}", file.display()))?;
+    let agda = check_file(file, include_root)?;
+
+    let verdict = if !agda.available {
+        "agda-unavailable"
+    } else if agda.ok && !report.has_hard_block() {
+        "proven-eligible"
+    } else {
+        "rejected"
+    };
+
+    if json {
+        let payload = serde_json::json!({
+            "version": "0.1",
+            "file": file,
+            "agda": agda,
+            "lint": report,
+            "verdict": verdict,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("{}", file.display());
+        if agda.available {
+            println!(
+                "  agda: exit {}, {}",
+                agda.exit_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "?".into()),
+                if agda.ok { "ok" } else { "FAILED" }
+            );
+        } else {
+            println!("  agda: not found on PATH (typecheck skipped)");
+        }
+        for d in &report.diagnostics {
+            println!("  [{}] {}: {}", sev_tag(d.severity), d.rule, d.message);
+        }
+        println!("  verdict: {verdict}");
+    }
+    Ok(())
+}
+
+fn dag(include_root: &Path, entry: Option<&Path>) -> Result<()> {
+    let entry_buf;
+    let entry = match entry {
+        Some(e) => e,
+        None => {
+            entry_buf = include_root.join("All.agda");
+            &entry_buf
+        }
+    };
+
+    // Orphan detection needs a real entry module; if there isn't one, drop
+    // that rule rather than flagging every module as an orphan.
+    let rules: Vec<Box<dyn LintRule>> = if entry.is_file() {
+        default_rules()
+    } else {
+        eprintln!(
+            "note: {} not found; skipping orphan-module rule",
+            entry.display()
+        );
+        default_rules()
+            .into_iter()
+            .filter(|r| r.name() != "orphan-module")
+            .collect()
+    };
+
+    let doc = build_dag(include_root, entry, &rules)?;
+    println!("{}", serde_json::to_string_pretty(&doc)?);
+    Ok(())
+}
+
+fn transition(workspace: &Path, file: &str, from: State, to: State) -> Result<()> {
+    let ws = Workspace::open(workspace)?;
+    ws.transition(file, from, to, None)?;
+    println!("{file}: {} -> {}", from.dir_name(), to.dir_name());
+    Ok(())
+}
+
+fn events(workspace: &Path) -> Result<()> {
+    let events = event::read_all(workspace)?;
+    if events.is_empty() {
+        println!("(no events)");
+        return Ok(());
+    }
+    for ev in &events {
+        println!("{}", serde_json::to_string(ev)?);
+    }
+    Ok(())
+}
+
 fn watch(workspace_path: &Path) -> Result<()> {
     let ws = Workspace::open(workspace_path)?;
-    let inbox = ws.state_dir(arghda_core::State::Inbox);
-    let working = ws.state_dir(arghda_core::State::Working);
+    let inbox = ws.state_dir(State::Inbox);
+    let working = ws.state_dir(State::Working);
 
     let (_w_inbox, rx_inbox) = watcher::watch(&inbox, false)?;
     let (_w_working, rx_working) = watcher::watch(&working, false)?;
@@ -141,5 +303,12 @@ fn watch(workspace_path: &Path) -> Result<()> {
         if let Ok(Ok(ev)) = rx_working.recv_timeout(Duration::from_millis(200)) {
             println!("working: {:?} {:?}", ev.kind, ev.paths);
         }
+    }
+}
+
+fn sev_tag(sev: arghda_core::Severity) -> &'static str {
+    match sev {
+        arghda_core::Severity::HardBlock => "BLOCK",
+        arghda_core::Severity::Warn => "warn",
     }
 }

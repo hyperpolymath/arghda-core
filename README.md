@@ -12,12 +12,29 @@ record.
 - `Workspace` struct with four-state dir layout (`inbox`, `working`,
   `proven`, `rejected`)
 - Filesystem watcher (`notify`-based)
-- Two linter rules:
+- Linter rules:
   - `missing-safe-pragma` — file lacks `{-# OPTIONS --safe --without-K #-}`
   - `orphan-module` — `.agda` file not imported from `All.agda`
-- CLI (`arghda`) with subcommands: `init`, `scan`, `watch`
+  - `unjustified-postulate` — `postulate` without an adjacent `-- JUSTIFY:` comment
+- Workspace state machine — transitions are file moves, each logged to
+  `.arghda/events.jsonl` (`claim`, `promote`, `reject`, `requeue`,
+  `invalidate`)
+- `dag` — emits the dependency-DAG JSON (nodes + import edges + blocked
+  list) for a source tree: the contract a visual layer consumes
+- `check` — runs Agda on a file and combines the typecheck verdict with the
+  lint report (degrades gracefully when `agda` is absent)
+- First-class import graph (the `graph` module, lifted out of the orphan rule)
+- CLI (`arghda`): `init`, `scan`, `check`, `dag`, `claim`, `promote`,
+  `reject`, `requeue`, `invalidate`, `events`, `watch`
 
-Not yet: `promote`, `reject`, `dag` (v0.1.x).
+Dogfooded against the echo-types corpus (193 modules): `dag` emits the
+903-edge import graph; `scan` flags the known real orphan
+(`experimental/echo-additive/VarianceGate.agda`) and the files deliberately
+outside the `--safe --without-K` kernel cone.
+
+Not yet: the remaining lint rules (`missing-without-k`, `unpinned-headline`,
+`unused-import`, `tab-mix`), content-hash invalidation of `proven`, the
+Groove service manifest, and the `.machine_readable/` RSR retrofit.
 
 ## Build
 
