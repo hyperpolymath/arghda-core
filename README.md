@@ -12,12 +12,37 @@ record.
 - `Workspace` struct with four-state dir layout (`inbox`, `working`,
   `proven`, `rejected`)
 - Filesystem watcher (`notify`-based)
-- Two linter rules:
+- Linter rules:
   - `missing-safe-pragma` — file lacks `{-# OPTIONS --safe --without-K #-}`
-  - `orphan-module` — `.agda` file not imported from `All.agda`
-- CLI (`arghda`) with subcommands: `init`, `scan`, `watch`
+  - `orphan-module` — `.agda` file not reachable from any CI root (roots
+    are auto-discovered as `All.agda`/`Smoke.agda`, or passed via `--entry`;
+    reachability is the *union*, so a module verified from any root is not
+    an orphan)
+  - `unjustified-postulate` — `postulate` without an adjacent `-- JUSTIFY:` comment
+- Workspace state machine — transitions are file moves, each logged to
+  `.arghda/events.jsonl` (`claim`, `promote`, `reject`, `requeue`,
+  `invalidate`)
+- `dag` — emits the dependency-DAG JSON (nodes + import edges + blocked
+  list) for a source tree: the contract a visual layer consumes
+- `check` — runs Agda on a file and combines the typecheck verdict with the
+  lint report (degrades gracefully when `agda` is absent)
+- First-class import graph (the `graph` module, lifted out of the orphan rule)
+- CLI (`arghda`): `init`, `scan`, `check`, `dag`, `claim`, `promote`,
+  `reject`, `requeue`, `invalidate`, `events`, `watch`
 
-Not yet: `promote`, `reject`, `dag` (v0.1.x).
+Dogfooded against the echo-types corpus (193 modules): `dag` emits the
+903-edge import graph; multi-root discovery (5 roots: `All.agda`,
+`Smoke.agda`, `Ordinal/Buchholz/Smoke.agda`, `characteristic/All.agda`,
+`examples/All.agda`) narrows orphan reports from 38 to the 17 genuine
+orphans — the `experimental/echo-additive/` tree (including
+`VarianceGate.agda`, the orphan the 2026-06-16 trust audit found by hand)
+plus standalone scratch files. `scan` also flags the files deliberately
+outside the `--safe --without-K` kernel cone (`Fidelity.agda`, the cubical
+island, the postulated shadow).
+
+Not yet: the remaining lint rules (`missing-without-k`, `unpinned-headline`,
+`unused-import`, `tab-mix`), content-hash invalidation of `proven`, the
+Groove service manifest, and the `.machine_readable/` RSR retrofit.
 
 ## Build
 

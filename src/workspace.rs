@@ -1,3 +1,4 @@
+use crate::event::{self, Event, EventKind};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -82,5 +83,60 @@ impl Workspace {
             }
         }
         Ok(out)
+    }
+
+    /// Which state currently holds `file_name` (a basename), if any.
+    pub fn state_of(&self, file_name: &str) -> Option<State> {
+        [State::Inbox, State::Working, State::Proven, State::Rejected]
+            .into_iter()
+            .find(|&state| self.state_dir(state).join(file_name).is_file())
+    }
+
+    /// Move `file_name` from `from` to `to`, appending the transition to the
+    /// event log. Rejects transitions not in the spec's state machine, and
+    /// fails if the file is not actually in `from`. Returns the new path.
+    pub fn transition(
+        &self,
+        file_name: &str,
+        from: State,
+        to: State,
+        note: Option<String>,
+    ) -> Result<PathBuf> {
+        let Some(kind) = transition_kind(from, to) else {
+            anyhow::bail!(
+                "disallowed transition {} -> {}",
+                from.dir_name(),
+                to.dir_name()
+            );
+        };
+        let src = self.state_dir(from).join(file_name);
+        if !src.is_file() {
+            anyhow::bail!("`{}` is not in `{}`", file_name, from.dir_name());
+        }
+        let dst = self.state_dir(to).join(file_name);
+        fs::rename(&src, &dst)
+            .with_context(|| format!("moving {} -> {}", src.display(), dst.display()))?;
+
+        let ev = Event::new(kind, file_name)
+            .with_from(from)
+            .with_to(to)
+            .with_note(note);
+        event::append(&self.root, &ev)
+            .with_context(|| format!("logging {:?} for {}", kind, file_name))?;
+        Ok(dst)
+    }
+}
+
+/// The event kind for a transition, or `None` if the pair is not a legal
+/// move in the spec's state machine.
+pub fn transition_kind(from: State, to: State) -> Option<EventKind> {
+    use State::*;
+    match (from, to) {
+        (Inbox, Working) => Some(EventKind::Claim),
+        (Working, Proven) => Some(EventKind::Promote),
+        (Working, Rejected) => Some(EventKind::Reject),
+        (Rejected, Inbox) => Some(EventKind::Requeue),
+        (Proven, Inbox) => Some(EventKind::Invalidate),
+        _ => None,
     }
 }

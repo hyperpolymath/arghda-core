@@ -32,10 +32,11 @@ fn collect_hard_blocks(include_root: &Path) -> Vec<(String, String)> {
         include_root.display()
     );
 
+    let roots = [entry];
     let rules = default_rules();
     let ctx = LintContext {
         include_root,
-        entry_module: &entry,
+        entry_modules: &roots,
     };
 
     let mut hits = Vec::new();
