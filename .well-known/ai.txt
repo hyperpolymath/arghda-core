@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: MPL-2.0
+# ai.txt — AI interaction policy for arghda-core.
+User-Agent: *
+Allow: /
+Purpose: Lightweight proof-workspace manager for Agda (the language-agnostic engine). Source is MPL-2.0; reuse is welcome under that licence.
+Contact: mailto:j.d.a.jewell@open.ac.uk

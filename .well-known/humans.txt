@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MPL-2.0
+/* TEAM */
+  Author: Jonathan D.A. Jewell (hyperpolymath)
+  Contact: j.d.a.jewell [at] open.ac.uk
+
+/* PROJECT */
+  Name: arghda-core
+  Purpose: proof-workspace manager for Agda (engine)
+  Standard: Rhodium Standard Repository (RSR)
+  Components: Rust
+  License: MPL-2.0
