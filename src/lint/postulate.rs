@@ -73,9 +73,10 @@ mod tests {
     fn lint_str(body: &str) -> LintReport {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), body).unwrap();
+        let roots = [tmp.path().to_path_buf()];
         let ctx = LintContext {
             include_root: tmp.path().parent().unwrap(),
-            entry_module: tmp.path(),
+            entry_modules: &roots,
         };
         let rules: Vec<Box<dyn LintRule>> = vec![Box::new(UnjustifiedPostulate)];
         run_lints(tmp.path(), &ctx, &rules).unwrap()

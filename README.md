@@ -14,7 +14,10 @@ record.
 - Filesystem watcher (`notify`-based)
 - Linter rules:
   - `missing-safe-pragma` — file lacks `{-# OPTIONS --safe --without-K #-}`
-  - `orphan-module` — `.agda` file not imported from `All.agda`
+  - `orphan-module` — `.agda` file not reachable from any CI root (roots
+    are auto-discovered as `All.agda`/`Smoke.agda`, or passed via `--entry`;
+    reachability is the *union*, so a module verified from any root is not
+    an orphan)
   - `unjustified-postulate` — `postulate` without an adjacent `-- JUSTIFY:` comment
 - Workspace state machine — transitions are file moves, each logged to
   `.arghda/events.jsonl` (`claim`, `promote`, `reject`, `requeue`,
@@ -28,9 +31,14 @@ record.
   `reject`, `requeue`, `invalidate`, `events`, `watch`
 
 Dogfooded against the echo-types corpus (193 modules): `dag` emits the
-903-edge import graph; `scan` flags the known real orphan
-(`experimental/echo-additive/VarianceGate.agda`) and the files deliberately
-outside the `--safe --without-K` kernel cone.
+903-edge import graph; multi-root discovery (5 roots: `All.agda`,
+`Smoke.agda`, `Ordinal/Buchholz/Smoke.agda`, `characteristic/All.agda`,
+`examples/All.agda`) narrows orphan reports from 38 to the 17 genuine
+orphans — the `experimental/echo-additive/` tree (including
+`VarianceGate.agda`, the orphan the 2026-06-16 trust audit found by hand)
+plus standalone scratch files. `scan` also flags the files deliberately
+outside the `--safe --without-K` kernel cone (`Fidelity.agda`, the cubical
+island, the postulated shadow).
 
 Not yet: the remaining lint rules (`missing-without-k`, `unpinned-headline`,
 `unused-import`, `tab-mix`), content-hash invalidation of `proven`, the

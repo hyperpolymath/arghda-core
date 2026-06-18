@@ -46,7 +46,7 @@ pub struct Blocked {
 pub struct DagDocument {
     pub version: &'static str,
     pub include_root: PathBuf,
-    pub entry_module: PathBuf,
+    pub entry_modules: Vec<PathBuf>,
     pub generated_at: String,
     pub nodes: Vec<DagNode>,
     pub edges: Vec<Edge>,
@@ -54,16 +54,17 @@ pub struct DagDocument {
 }
 
 /// Build the DAG document for the source tree at `include_root`, using
-/// `entry` for the orphan-reachability rule and `rules` as the lint pack.
+/// `entry_modules` (the union of CI roots) for the orphan-reachability rule
+/// and `rules` as the lint pack.
 pub fn build(
     include_root: &Path,
-    entry: &Path,
+    entry_modules: &[PathBuf],
     rules: &[Box<dyn LintRule>],
 ) -> Result<DagDocument> {
     let graph = graph::build(include_root)?;
     let ctx = LintContext {
         include_root,
-        entry_module: entry,
+        entry_modules,
     };
 
     let mut nodes = Vec::with_capacity(graph.nodes.len());
@@ -107,7 +108,7 @@ pub fn build(
     Ok(DagDocument {
         version: "0.1",
         include_root: include_root.to_path_buf(),
-        entry_module: entry.to_path_buf(),
+        entry_modules: entry_modules.to_vec(),
         generated_at: now_rfc3339(),
         nodes,
         edges: graph.edges,

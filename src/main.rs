@@ -1,12 +1,16 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, check_file, default_rules, event, run_lints, watcher, LintRule, State, Workspace,
+    build_dag, check_file, default_rules, event, graph, run_lints, watcher, LintRule, State,
+    Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use walkdir::WalkDir;
+
+/// A lint pack (boxed trait objects).
+type RuleSet = Vec<Box<dyn LintRule>>;
 
 #[derive(Parser)]
 #[command(
@@ -27,10 +31,10 @@ enum Cmd {
     Scan {
         /// Directory containing `.agda` files; treated as the include root.
         path: PathBuf,
-        /// Entry module used for orphan detection. Defaults to
-        /// `<path>/All.agda`.
+        /// Root module for orphan detection; repeatable. Defaults to every
+        /// `All.agda`/`Smoke.agda` discovered under PATH.
         #[arg(long)]
-        entry: Option<PathBuf>,
+        entry: Vec<PathBuf>,
         /// Emit the report as JSON instead of human-readable text.
         #[arg(long)]
         json: bool,
@@ -50,9 +54,10 @@ enum Cmd {
     Dag {
         /// Directory containing `.agda` files; treated as the include root.
         path: PathBuf,
-        /// Entry module for orphan detection. Defaults to `<path>/All.agda`.
+        /// Root module for orphan detection; repeatable. Defaults to every
+        /// `All.agda`/`Smoke.agda` discovered under PATH.
         #[arg(long)]
-        entry: Option<PathBuf>,
+        entry: Vec<PathBuf>,
     },
     /// Claim a file: inbox -> working.
     Claim { workspace: PathBuf, file: String },
@@ -77,13 +82,13 @@ fn main() -> Result<()> {
             let ws = Workspace::init(&path)?;
             println!("initialised workspace at {}", ws.root().display());
         }
-        Cmd::Scan { path, entry, json } => scan(&path, entry.as_deref(), json)?,
+        Cmd::Scan { path, entry, json } => scan(&path, &entry, json)?,
         Cmd::Check {
             file,
             include_root,
             json,
         } => check(&file, include_root.as_deref(), json)?,
-        Cmd::Dag { path, entry } => dag(&path, entry.as_deref())?,
+        Cmd::Dag { path, entry } => dag(&path, &entry)?,
         Cmd::Claim { workspace, file } => {
             transition(&workspace, &file, State::Inbox, State::Working)?
         }
@@ -105,23 +110,11 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn scan(include_root: &Path, entry: Option<&Path>, json: bool) -> Result<()> {
-    let entry_buf;
-    let entry = match entry {
-        Some(e) => e,
-        None => {
-            entry_buf = include_root.join("All.agda");
-            &entry_buf
-        }
-    };
-    if !entry.is_file() {
-        anyhow::bail!("entry module not found: {}", entry.display());
-    }
-
-    let rules = default_rules();
+fn scan(include_root: &Path, entry: &[PathBuf], json: bool) -> Result<()> {
+    let (roots, rules) = resolve_roots_and_rules(include_root, entry)?;
     let ctx = LintContext {
         include_root,
-        entry_module: entry,
+        entry_modules: &roots,
     };
 
     let mut reports = Vec::new();
@@ -147,7 +140,7 @@ fn scan(include_root: &Path, entry: Option<&Path>, json: bool) -> Result<()> {
         let payload = serde_json::json!({
             "version": "0.1",
             "include_root": include_root,
-            "entry_module": entry,
+            "entry_modules": roots,
             "files_scanned": reports.len(),
             "hard_blocks": hard_blocks,
             "warns": warns,
@@ -187,12 +180,13 @@ fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
         }
     };
 
-    // The orphan rule self-skips when the entry module is the file itself,
-    // which is exactly what a single-file check wants.
+    // The orphan rule self-skips when the file is its own root, which is
+    // exactly what a single-file check wants.
     let rules = default_rules();
+    let roots = [file.to_path_buf()];
     let ctx = LintContext {
         include_root,
-        entry_module: file,
+        entry_modules: &roots,
     };
     let report =
         run_lints(file, &ctx, &rules).with_context(|| format!("linting {}", file.display()))?;
@@ -236,34 +230,45 @@ fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn dag(include_root: &Path, entry: Option<&Path>) -> Result<()> {
-    let entry_buf;
-    let entry = match entry {
-        Some(e) => e,
-        None => {
-            entry_buf = include_root.join("All.agda");
-            &entry_buf
-        }
-    };
+fn dag(include_root: &Path, entry: &[PathBuf]) -> Result<()> {
+    let (roots, rules) = resolve_roots_and_rules(include_root, entry)?;
+    let doc = build_dag(include_root, &roots, &rules)?;
+    println!("{}", serde_json::to_string_pretty(&doc)?);
+    Ok(())
+}
 
-    // Orphan detection needs a real entry module; if there isn't one, drop
-    // that rule rather than flagging every module as an orphan.
-    let rules: Vec<Box<dyn LintRule>> = if entry.is_file() {
-        default_rules()
+/// Resolve the root modules and the matching lint pack for `scan`/`dag`.
+/// Explicit `--entry` values win; otherwise roots are auto-discovered
+/// (`All.agda`/`Smoke.agda`). When no roots can be found, the
+/// orphan-module rule is dropped (with a note) rather than flagging every
+/// module as an orphan.
+fn resolve_roots_and_rules(
+    include_root: &Path,
+    entry: &[PathBuf],
+) -> Result<(Vec<PathBuf>, RuleSet)> {
+    for e in entry {
+        if !e.is_file() {
+            anyhow::bail!("entry module not found: {}", e.display());
+        }
+    }
+    let roots = if entry.is_empty() {
+        graph::discover_roots(include_root)
     } else {
+        entry.to_vec()
+    };
+    let rules: RuleSet = if roots.is_empty() {
         eprintln!(
-            "note: {} not found; skipping orphan-module rule",
-            entry.display()
+            "note: no root modules (All.agda/Smoke.agda) found under {}; skipping orphan-module rule",
+            include_root.display()
         );
         default_rules()
             .into_iter()
             .filter(|r| r.name() != "orphan-module")
             .collect()
+    } else {
+        default_rules()
     };
-
-    let doc = build_dag(include_root, entry, &rules)?;
-    println!("{}", serde_json::to_string_pretty(&doc)?);
-    Ok(())
+    Ok((roots, rules))
 }
 
 fn transition(workspace: &Path, file: &str, from: State, to: State) -> Result<()> {

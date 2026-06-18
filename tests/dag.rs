@@ -14,8 +14,8 @@ fn fixture(name: &str) -> PathBuf {
 #[test]
 fn dag_over_orphan_fixture_has_expected_shape() {
     let root = fixture("orphan");
-    let entry = root.join("All.agda");
-    let doc = build_dag(&root, &entry, &default_rules()).unwrap();
+    let roots = [root.join("All.agda")];
+    let doc = build_dag(&root, &roots, &default_rules()).unwrap();
 
     // Nodes are deterministic and sorted by module id.
     let ids: Vec<&str> = doc.nodes.iter().map(|n| n.id.as_str()).collect();
@@ -52,8 +52,8 @@ fn dag_over_orphan_fixture_has_expected_shape() {
 #[test]
 fn dag_over_wellformed_fixture_is_all_clean() {
     let root = fixture("wellformed");
-    let entry = root.join("All.agda");
-    let doc = build_dag(&root, &entry, &default_rules()).unwrap();
+    let roots = [root.join("All.agda")];
+    let doc = build_dag(&root, &roots, &default_rules()).unwrap();
 
     assert_eq!(doc.version, "0.1");
     assert!(

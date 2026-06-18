@@ -113,6 +113,44 @@ pub fn transitive_imports(entry: &Path, include_root: &Path) -> Result<HashSet<S
     Ok(reachable)
 }
 
+/// Union of the modules reachable from each root in `roots`. A module
+/// verified from *any* CI entry point counts as reachable.
+pub fn reachable_from_roots(roots: &[PathBuf], include_root: &Path) -> Result<HashSet<String>> {
+    let mut all = HashSet::new();
+    for root in roots {
+        for m in transitive_imports(root, include_root)? {
+            all.insert(m);
+        }
+    }
+    Ok(all)
+}
+
+/// Discover conventional CI root modules under `include_root`: every file
+/// named `All.agda` or `Smoke.agda`, at any depth. These are the entry
+/// points an estate `--safe --without-K` workspace registers its verified
+/// suite from (e.g. echo-types has `All.agda`, `Smoke.agda`,
+/// `characteristic/All.agda`, `examples/All.agda`, `tutorial/All.agda`).
+pub fn discover_roots(include_root: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    for entry in WalkDir::new(include_root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("agda") {
+            continue;
+        }
+        if matches!(
+            path.file_name().and_then(|s| s.to_str()),
+            Some("All.agda") | Some("Smoke.agda")
+        ) {
+            roots.push(path.to_path_buf());
+        }
+    }
+    roots.sort();
+    roots
+}
+
 /// A node in the import graph: a `.agda` source file and its module name.
 #[derive(Clone, Debug, Serialize)]
 pub struct GraphNode {
@@ -220,5 +258,36 @@ mod tests {
         assert!(imports.contains(&"Foo.Bar".to_string()));
         assert!(imports.contains(&"Baz".to_string()));
         assert!(!imports.iter().any(|i| i.contains("Ignored")));
+    }
+
+    #[test]
+    fn discover_and_reach_over_multiple_roots() {
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        std::fs::write(r.join("All.agda"), "module All where\nopen import Used\n").unwrap();
+        std::fs::write(
+            r.join("Smoke.agda"),
+            "module Smoke where\nopen import Other\n",
+        )
+        .unwrap();
+        std::fs::write(r.join("Used.agda"), "module Used where\n").unwrap();
+        std::fs::write(r.join("Other.agda"), "module Other where\n").unwrap();
+        std::fs::write(r.join("Orphan.agda"), "module Orphan where\n").unwrap();
+
+        let roots = discover_roots(r);
+        let names: Vec<String> = roots
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
+            .collect();
+        assert_eq!(roots.len(), 2, "discovers All.agda + Smoke.agda: {names:?}");
+        assert!(names.contains(&"All.agda".to_string()));
+        assert!(names.contains(&"Smoke.agda".to_string()));
+
+        // Reachability is the UNION: Used (via All) and Other (via Smoke)
+        // are both reachable; Orphan (via neither) is not.
+        let reachable = reachable_from_roots(&roots, r).unwrap();
+        assert!(reachable.contains("Used"));
+        assert!(reachable.contains("Other"));
+        assert!(!reachable.contains("Orphan"));
     }
 }

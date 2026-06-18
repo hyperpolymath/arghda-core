@@ -1,6 +1,6 @@
 use super::{LintContext, LintRule};
 use crate::diagnostic::{Diagnostic, LintReport, Severity};
-use crate::graph::{module_name_of, transitive_imports};
+use crate::graph::{module_name_of, reachable_from_roots};
 use anyhow::{Context, Result};
 use std::path::Path;
 
@@ -16,18 +16,17 @@ impl LintRule for OrphanModule {
             return Ok(()); // file sits outside include_root; nothing to say
         };
 
-        // The entry module itself is never an orphan of itself.
-        if Some(module.as_str()) == module_name_of(ctx.entry_module, ctx.include_root).as_deref() {
+        // A root module is never an orphan of itself.
+        let is_root = ctx
+            .entry_modules
+            .iter()
+            .any(|root| module_name_of(root, ctx.include_root).as_deref() == Some(module.as_str()));
+        if is_root {
             return Ok(());
         }
 
-        let reachable =
-            transitive_imports(ctx.entry_module, ctx.include_root).with_context(|| {
-                format!(
-                    "computing transitive imports from {}",
-                    ctx.entry_module.display()
-                )
-            })?;
+        let reachable = reachable_from_roots(ctx.entry_modules, ctx.include_root)
+            .context("computing reachability from root modules")?;
 
         if !reachable.contains(&module) {
             report.push(Diagnostic {
@@ -35,9 +34,9 @@ impl LintRule for OrphanModule {
                 severity: Severity::HardBlock,
                 file: file.to_path_buf(),
                 message: format!(
-                    "module `{}` is not reachable via imports from `{}`",
+                    "module `{}` is not reachable via imports from any of the {} root module(s)",
                     module,
-                    ctx.entry_module.display()
+                    ctx.entry_modules.len()
                 ),
                 line: None,
             });
