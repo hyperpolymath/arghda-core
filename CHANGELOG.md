@@ -26,6 +26,11 @@ All notable changes to arghda-core are documented here. The format follows
   (warn).
 - RSR scaffolding: `.machine_readable/6a2/` artefacts, `0-AI-MANIFEST.a2ml`,
   `Justfile`, `.well-known/`, and community-health files.
+- Content-hash invalidation of `proven`: promotion records a SHA-256 of the
+  file in `.arghda/hashes.json`; the `stale` command reports proven files
+  edited since promotion, and `stale --invalidate` moves them back to inbox
+  (the `proven -> inbox` invalidation). Dependency-free SHA-256, pinned
+  against the NIST test vectors.
 
 ### Notes
 

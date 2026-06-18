@@ -26,8 +26,8 @@ milestones = [
   { name = "State machine (claim/promote/reject/requeue/invalidate) + events.jsonl", completion = 100 },
   { name = "`check` command (Agda typecheck + lint verdict)", completion = 100 },
   { name = "Multi-root reachability (union of discovered CI roots)", completion = 100 },
+  { name = "Content-hash invalidation of proven (file-level; +imports deferred)", completion = 75 },
   { name = "Remaining lint rules (unpinned-headline, unused-import)", completion = 0 },
-  { name = "Content-hash invalidation of proven", completion = 0 },
   { name = "Groove service manifest (/.well-known/groove)", completion = 0 },
   { name = "RSR retrofit (.machine_readable, Justfile, .well-known)", completion = 60 },
 ]
@@ -38,8 +38,8 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "Add unpinned-headline + unused-import lint rules",
-  "Content-hash proven files (SHA-256 of file + imports) for auto-invalidation",
+  "Add unpinned-headline (needs config + headline regex) + unused-import (agda-unused) lint rules",
+  "Extend content-hash to cover transitive imports (needs include-root tracking)",
   "Serve /.well-known/groove for PanLL discovery",
   "Scaffold arghda-studio (AffineScript visual layer consuming the dag JSON)",
 ]
