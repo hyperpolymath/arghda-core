@@ -2,9 +2,11 @@ use crate::diagnostic::LintReport;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
+pub mod escape_hatch;
 pub mod orphan_module;
 pub mod postulate;
 pub mod safe_pragma;
+pub mod tab_mix;
 
 /// Context handed to every rule.
 #[derive(Clone, Debug)]
@@ -28,6 +30,8 @@ pub fn default_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(safe_pragma::SafePragma),
         Box::new(orphan_module::OrphanModule),
         Box::new(postulate::UnjustifiedPostulate),
+        Box::new(escape_hatch::EscapeHatch),
+        Box::new(tab_mix::TabMix),
     ]
 }
 

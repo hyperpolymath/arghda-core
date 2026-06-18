@@ -19,6 +19,10 @@ record.
     reachability is the *union*, so a module verified from any root is not
     an orphan)
   - `unjustified-postulate` — `postulate` without an adjacent `-- JUSTIFY:` comment
+  - `escape-hatch` (warn) — termination overrides (`TERMINATING`,
+    `NON_TERMINATING`, `NO_TERMINATION_CHECK`) and trust primitives
+    (`believe_me`/`primTrustMe`)
+  - `tab-mix` (warn) — a tab in leading whitespace
 - Workspace state machine — transitions are file moves, each logged to
   `.arghda/events.jsonl` (`claim`, `promote`, `reject`, `requeue`,
   `invalidate`)
@@ -40,9 +44,11 @@ plus standalone scratch files. `scan` also flags the files deliberately
 outside the `--safe --without-K` kernel cone (`Fidelity.agda`, the cubical
 island, the postulated shadow).
 
-Not yet: the remaining lint rules (`missing-without-k`, `unpinned-headline`,
-`unused-import`, `tab-mix`), content-hash invalidation of `proven`, the
-Groove service manifest, and the `.machine_readable/` RSR retrofit.
+Not yet: `unpinned-headline` (needs `Smoke.agda` parsing + a configurable
+regex) and `unused-import` (shells out to `agda-unused`); content-hash
+invalidation of `proven`; the Groove service manifest; and the
+`.machine_readable/` RSR retrofit. (`missing-without-k` is subsumed by
+`missing-safe-pragma`, which already reports a missing `--without-K`.)
 
 ## Build
 
