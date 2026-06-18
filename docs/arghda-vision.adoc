@@ -1,0 +1,766 @@
+// SPDX-License-Identifier: CC-BY-4.0
+// SPDX-FileCopyrightText: 2025-2026 Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+= ArghDA — Vision, Architecture & Roadmap
+:toc: macro
+:toclevels: 3
+
+toc::[]
+
+== What this document is
+
+`arghda-spec.adoc` (alongside this file) is the MVP contract for the
+Rust engine. *This* document is the wider plan: what ArghDA is as a
+product, how it sits inside the hyperpolymath estate, the three-layer
+architecture, the build decisions (including the honest AffineScript
+feasibility position), the full feature set mined from real proof
+work, the integration seams, the RSR-compliant shape of the new
+AffineScript visual tool, and a phased roadmap.
+
+It is a planning artefact, not a spec freeze. Names marked
+"(proposed)" are open.
+
+== Purpose, in one paragraph
+
+ArghDA is a *visual proof-wiring / wiring-diagram tool* whose job is to
+**organise, visualise, and communicate** the climbing-frames of large,
+multi-stage, multi-module proofs — for mathematicians and
+non-mathematicians alike — and to make the *lifecycle* of a proof
+(inbox → working → proven | rejected), its *soundness*, and its
+*dependencies* first-class, always-current, visible objects.
+
+=== The hard boundary (read this before anything else)
+
+[IMPORTANT]
+====
+ArghDA does **not** prove anything. *Agda proves.* (Directly, or
+dispatched through *Echidna*, the multi-prover orchestrator that
+treats Agda as a first-class backend.)
+
+ArghDA is the *organising* assistant around the prover: it wires the
+diagram, tracks what is proven / admitted / postulated / refuted,
+shows what depends on what, communicates a proof in registers a
+newcomer or an expert can each read, and writes coherent updates back
+into the proof workspace. When ArghDA says a node is "proven," it is
+*reporting Agda's verdict*, never substituting for it.
+====
+
+This boundary is not cosmetic. The whole motivation (below) is that
+the painful failure mode in real proof work is *believing* something
+is proven when it is not — orphaned modules that typecheck only
+because the obligations are comments, postulates hiding in the wired
+cone, four contradicting status tables. ArghDA's value is precisely
+*honest* status reporting on top of the prover, so it must never blur
+the line by appearing to prove.
+
+== Why it exists — the motivating pain
+
+The need is not hypothetical. It was lived in `echo-types` and
+`absolute-zero` (and named, in `echo-types`, as ArghDA: "lightweight
+proof-workspace manager for Agda; triage folders, linter, DAG view").
+The concrete pain points ArghDA targets, every one of them observed:
+
+. *"Is this actually proven?"* — proven vs admitted vs postulated vs
+  refuted is tracked only in long, drifting prose ledgers
+  (`proof-debt.md`, `proof-debt-triage.md`, `Fidelity-OPEN-postulates.md`).
+  Answering "how solid is this claim, really?" requires reading
+  several documents that disagree by date.
+. *Orphan modules — compiles ≠ verified.* The flagship trap:
+  `experimental/echo-additive/VarianceGate.agda` is on `main`,
+  typechecks `--safe`, and contains *no proven theorems* — the
+  obligations are comments. A reader mistakes dead code for a result.
+  An out-of-band cold-rebuild trust audit (2026-06-16) had to
+  establish by hand which postulate-bearing files were quarantined
+  outside the wired cone.
+. *Soundness holes hide.* `postulate`, `believe_me`, `primTrustMe`,
+  `TERMINATING`/`NO_TERMINATION_CHECK`, `funext` imports,
+  `--cubical`/safety-relaxing `OPTIONS` — each can silently weaken a
+  result. `kernel-guard.sh` exists to police this manually.
+. *Dependency ordering is invisible.* The 57-module `Ordinal/Buchholz/`
+  ladder encodes its real dependency edges only in `open import`
+  blocks and a naming convention; a wrong base silently reverts work.
+. *Settled dead-ends get re-walked.* Three `*Refuted.agda` modules and
+  a six-row "walled routes" table exist *solely* so provably-dead
+  branches are not re-attempted; "DO NOT reopen" lists are the
+  human-memory backstop.
+. *Near-identical artefacts proliferate.* 13+ `_<ᵇ`-family order
+  relations, each covering a different subset of constructors; which
+  is "the real one," what is IN/OUT, and which embeds into which lives
+  only in prose preambles that already miscount.
+. *Provisional vs real.* Budgeted theorems (`wf-<ᵇʳᶠᵇ` over `ℕ × BT`)
+  stand in for the real goal (`wf-<ᵇʳᶠ`); whether a scaffold is the
+  accepted final form is itself an open governance question.
+. *Status labels drift across files.* `ROADMAP` says 50%, `STATE`
+  says 65%; `AGENTIC.a2ml` says 18 `sorry`, the triage says 0. Four
+  date-stamped snapshots of one constructor table disagree.
+. *Parallel-session merge drift.* Multiple agents branch off a stale
+  `main` and silently revert each other; the mitigations
+  (`git rebase origin/main` before push, `--only <paths>`,
+  `--force-with-lease`) are manual.
+
+`echo-types` already shipped a UI sketch that proves the concept —
+`docs/echo-types/prototypes/warrant_debugger_prototype.jsx` renders a
+proof obligation as a visual fibre, steps through repair choices, and
+*keeps provenance on a restored result* ("remains marked as weakened,
+not cleanly proven"). That is exactly ArghDA's honest-status tracking
+in an accessible register.
+
+== Where ArghDA sits in the ecosystem
+
+The estate's research-to-production pipeline is:
+
+[source]
+----
+kategoria  →  ideas-to-alphas  →  typell   →  typed-wasm  →  PanLL
+(lab)         (incubator)         (kernel)     (target)       (env)
+----
+
+ArghDA is the cross-cutting *proof-organisation and communication
+layer* that rides alongside this pipeline. Each neighbour connects to
+a concrete ArghDA capability:
+
+[cols="1,3"]
+|===
+| Repo / system | How it connects to ArghDA
+
+| *echo-types*, *absolute-zero*
+| Primary *workspaces*. The proof corpora ArghDA organises, the source
+  of every feature requirement, and the first dogfooding targets.
+
+| *kategoria*
+| The diagrammatic goldmine. Its headline finding — the ten
+  type-safety levels are a *composition lattice* (e.g. L9 = L2 + L6 +
+  L7), and session types are *graded/indexed monads* — is natively
+  wiring-diagram-shaped. ArghDA can render the level lattice and the
+  session-protocol monads as first-class diagrams.
+
+| *ideas-to-alphas*
+| The *graduation* pipeline ("idea → alpha → programmatic"). Proof
+  artefacts mature by a believe_me/postulate burn-down; their
+  proof-dependency DAGs are already written as comments. ArghDA
+  renders the graduation-maturity dashboard and the promotion arrows
+  to `typell`/`typed-wasm`. This is the "proofs go programmatic" stage.
+
+| *typell* (port 7800)
+| The type kernel. Emits `ProofObligation`s
+  (`/generate-obligations`). ArghDA ingests obligations as graph
+  nodes and tracks their discharge — TypeLL emits, a prover discharges,
+  ArghDA shows the certificate.
+
+| *Echidna* (Zig-API service #3, port 8090)
+| The verification *backend*. A multi-prover orchestrator (Idris2; NOT
+  the Ethereum fuzzer) with Agda as a first-class prover. ArghDA
+  dispatches a wired goal to Echidna and renders the returned
+  `ProofResult` (status, proof term, confidence) onto the node.
+
+| *Unified Zig API Stack* (`developer-ecosystem/zig-api`)
+| The verified FFI front door to Echidna (and 10 other services).
+  ArghDA reaches Echidna through `libzig_api`'s connector pool, or
+  directly over HTTP+JSON.
+
+| *hybrid-automation-router (HAR)*
+| The downstream automation seam for the *programmatic* stage. When a
+  proof completes, ArghDA emits a proof-completion `AutomationEvent`;
+  HAR routes it to a target (e.g. `rpa-elysium`).
+
+| *nextgen-language-evangeliser*
+| The *communication* model. Its "Celebrate / Minimize / Better /
+  Safety / Example" no-shame narrative, Makaton-style glyphs, and
+  RAW/FOLDED/GLYPHED rendering registers are the template for making
+  proofs legible to non-mathematicians and mathematicians alike.
+
+| *PanLL*
+| The eventual *home surface*. `arghda-panll` (a panel adjacent to
+  Pane-W) embeds the tool via the Groove service-discovery protocol
+  and a `Tea_Sub` live event feed.
+
+| *AffineScript / typed-wasm*
+| The implementation language and verification target for the visual
+  tool (see the build decision below).
+|===
+
+== Architecture — three layers
+
+ArghDA is three packages with a strict contract between them. This
+mirrors `arghda-spec.adoc`'s original core/panll split, generalised.
+
+[cols="1,1,3"]
+|===
+| Layer | Language | Responsibility
+
+| *arghda-core* +
+  (exists; extend)
+| Rust
+| The *engine*. Filesystem state-machine (inbox → working → proven |
+  rejected as file moves), Agda invocation, Echidna dispatch,
+  import-graph extraction → DAG JSON, `events.jsonl` stream, lint
+  rules, content hashing, the Groove `/.well-known/groove` manifest.
+  No UI. Emits canonical JSON. Runs in CI, standalone, or embedded.
+
+| *arghda-studio* +
+  (new; proposed)
+| AffineScript +
+  → typed-wasm / Deno-ESM
+| The *visual tool* — "ArghDA" as the user experiences it. Consumes
+  core JSON. Holds the rich proof-node graph model, the metadata
+  importers, the soundness/reachability *presentation*, the
+  sound-carrier lattice and per-constructor matrix views, the
+  multi-register renderers, the glyph vocabulary, the narrative
+  generator, and the human-facing write-back generators. v1 renders
+  *static SVG/HTML*; interactive canvas is phased in later.
+
+| *arghda-panll* +
+  (later)
+| AffineScript (panel) +
+  on the PanLL surface
+| The PanLL embedding. A panel adjacent to Pane-W that hosts
+  `arghda-studio`'s output, discovered via Groove, fed by a live
+  `Tea_Sub` subscription to the core's event stream.
+|===
+
+=== Decision record
+
+[cols="1,2,3"]
+|===
+| Decision | Choice | Rationale
+
+| Engine language
+| *Keep & extend Rust `arghda-core`*
+| It already works and matches the HAR / proven-servers stack. The
+  engine's work (process spawning, filesystem, Agda invocation) leans
+  precisely on the AffineScript features that are broken today
+  (effect handlers, #555). Rust is the low-risk home for the engine.
+
+| Visual-tool language
+| *AffineScript → typed-wasm / Deno-ESM*
+| Honours the directive to build the tool in AffineScript, dogfoods
+  the estate's flagship language, and uses its genuinely-enforced
+  affine/linear types for resource-shaped state (e.g. a
+  must-disconnect Groove handle).
+
+| v1 rendering
+| *Static SVG/HTML from pure functions*
+| Sidesteps the blocking AffineScript gaps (see below) entirely: a
+  renderer that maps the graph to an SVG/HTML string is a *pure
+  function*, needing none of the broken interactive-DOM machinery.
+  Usable now.
+
+| Interactive canvas
+| *Deferred; ArghDA is the forcing function*
+| Lands when the AffineScript DOM/TEA toolchain matures (#255, #555).
+  ArghDA becomes the first real consumer that motivates fixing them.
+|===
+
+== The build decision in full — AffineScript feasibility
+
+This is stated plainly because it is in tension with a naïve reading
+of "build it in AffineScript compiling to typed-wasm," and honesty
+here is cheaper than discovering it mid-build.
+
+*What is true today* (from the compiler's own `CAPABILITY-MATRIX.adoc`,
+the declared single source of truth, and execution-verified issues):
+
+* *No interactive DOM/TEA path exists.* The only "TEA in AffineScript"
+  artefacts are an interpreter-level `counter.afs` (model = one `Int`)
+  and a hand-written, fixed-memory-layout wasm "TitleScreen". There is
+  no general AffineScript → vdom compiler.
+* *The one DOM reconciler does not run.* `affinescript-dom/src/dom.affine`
+  compiles but is blocked by *#255* — a wasm-codegen defect where
+  `for-in`/`while` loop bodies never execute in the compiled module. A
+  wiring canvas is *all* dynamic lists and loops, so #255 is squarely
+  on the interactive critical path.
+* *Effect handlers are silently mis-lowered* on core-wasm, JS-text,
+  and Deno-ESM (*#555*; async CPS falls back to sync, *#556*) — exactly
+  the tool one would reach for in an event-driven UI.
+* *"typed-wasm" is not a rich codegen target.* It is a narrow,
+  *opt-in* ownership verifier (enforcing only L7 aliasing + L10
+  linearity + L13 isolation) over plain wasm, living in the separate
+  `typed-wasm` repo. `affinescript verify` does not gate the compile
+  pipeline today.
+
+*What is solid today:* non-interactive logic compiled to *Deno-ESM*,
+with enforced affine/linear (QTT) types, working pattern matching /
+ADTs / generics / records, and real `fetch`-based HTTP
+(`stdlib/Http.affine`).
+
+*The resolution* (the chosen v1 approach): keep `arghda-studio`'s logic
+in the solid subset and make rendering a *pure function* `graph →
+SVG/HTML string`. No interactive DOM, no effect handlers in the hot
+path, no reliance on #255. The tool is genuinely AffineScript→typed-wasm
+(verifiable on the linear-resource boundary), usable now, and
+positioned so that the interactive upgrade is additive — at which point
+ArghDA's own needs become the forcing function for the toolchain.
+
+[NOTE]
+====
+Avoid in `arghda-studio` v1: effect handlers in the render/IO hot path,
+dependent/refinement-type *enforcement* (parse-only today, #558),
+heavy loops-in-wasm, and cross-function mutual recursion (single-pass
+codegen). Prefer: pure transforms, Deno-ESM host I/O via the existing
+`fetch` story, and affine types for resource handles.
+====
+
+== The heart — one richly-tagged proof-node graph
+
+Everything converges on a single data structure. Parts A (organisation)
+and B (communication) of the requirements both demand it; designing it
+once is the central act.
+
+=== Node = proof unit
+
+[cols="1,3"]
+|===
+| Field | Meaning
+
+| `id`, `name`, `module`
+| Stable identity; the headline theorem name; its Agda module.
+
+| `location`
+| `file:line` provenance into the source.
+
+| `status`
+| `Landed`/`REAL` \| `Partial`/`REAL*` \| `Open` \| `Roadmap` \|
+  `Retracted` \| `Closed-Neg` \| `Refuted` \| `Budgeted`/`Provisional`.
+  (Superset of the MAP.adoc legend.)
+
+| `soundness`
+| `clean` \| `uses-postulate(name)` \| `uses-TERMINATING` \|
+  `uses-funext` \| `cubical-island` \| `axiom`. With *inside/outside
+  wired cone* flag.
+
+| `wired`
+| `in-All?` · `pinned-in-Smoke?` · `classified-in-note?` — the
+  three-way "is this actually in the verified suite" state.
+
+| `tier`, `gate`, `lane`
+| Classification overlays (Tier-1/2/3; Gate F1–F5; lane status).
+
+| `prover`
+| `agda` \| `coq` \| `lean4` \| `idris2` \| … (engine is
+  language-agnostic; multi-prover from `absolute-zero`).
+
+| `confidence`
+| Verification confidence (0–1), e.g. from Echidna's neural component.
+
+| `owner`, `deadline`
+| For open/debt items (from the proof-debt ledgers).
+
+| `glyphs`
+| Makaton-style semantic glyph set (communication).
+
+| `narrative`
+| The 5-slot gloss: intuition / scope-caveat / why-it-matters /
+  guarantee / witness (communication).
+
+| `honest_scope`, `not_proved`
+| Explicit non-claims and matched-negative links ("what this does NOT
+  prove"), e.g. the `NotProved-*` discipline.
+|===
+
+=== Edge = typed dependency
+
+`imports` (from `open import`) · `depends-on-lemma` · `gated-on`
+(gate→gate, lane→lane) · `embeds-into` (the sound-carrier lattice) ·
+`refutes` / `blocked-by` (dead-end edges) · `supersedes` (dated
+snapshots).
+
+This is a strict superset of `arghda-spec.adoc`'s DAG JSON
+(`nodes[].{id,file,status,lint,headlines}`, `edges[].{from,to,kind}`,
+`blocked[]`). The core emits that JSON; the studio enriches it with the
+status taxonomy, soundness, glyph, and narrative fields above.
+
+== Feature set
+
+Three directions, all reading from / writing to the one graph.
+
+=== Division of responsibility
+
+[cols="1,2,2"]
+|===
+| Concern | arghda-core (Rust) | arghda-studio (AffineScript)
+
+| Ground truth
+| Parse `open import` graph; run Agda; lint; content-hash; emit DAG +
+  lint + events JSON.
+| Consume that JSON; never re-parse Agda itself.
+
+| Enrichment
+| —
+| Status taxonomy, soundness badges, tier/gate/lane overlays, glyphs,
+  narrative, confidence.
+
+| Extra importers
+| —
+| A2ML `STATE`, proof-debt ledgers, `MAP.adoc`, earn-back gate graphs,
+  per-marker triage tables (sources the core does not read).
+
+| Visualisation
+| —
+| SVG/HTML renderers, lattice & matrix views, audience registers.
+
+| Code write-back
+| Generate/repair `All.agda` and `Smoke.agda` (it owns the import
+  graph + file moves).
+| Request it; preview the diff.
+
+| Doc write-back
+| —
+| Ledgers, session-arcs, retraction/decision records, glyph legends,
+  multi-register HTML.
+|===
+
+=== "Take from" — import existing proof state
+
+. *Authoritative import DAG* from real `open import` edges (core),
+  replacing the naming-convention ladder.
+. *Reachability/wired analysis* rooted at CI entry points (`All.agda`,
+  `Smoke.agda`, …): colour every node *wired* / *pinned* / *classified*
+  / *orphan* — automating the hand audit that caught `VarianceGate`.
+. *Soundness scanner* badging `postulate` / `believe_me` / escape
+  pragmas / `funext` / `--cubical` per node, marking inside/outside the
+  trusted cone (generalises `kernel-guard.sh` + `check-guardrails.sh`).
+. *Structured-ledger importers* (studio): A2ML state, the
+  `(file,line,id,disposition,justification)` triage rows, the
+  four-bucket proof-debt, the earn-back gate graph.
+. *Multi-prover awareness*: per-node `prover` + per-prover build/verify
+  commands (from `config.ncl`).
+. *Drift / single-source-of-truth reconciliation*: cross-check the same
+  fact across files and *flag divergence* (50% vs 65%; 18-sorry vs 0).
+. *Refuted / walled-route registry*: first-class dead-end nodes
+  carrying their counterexample and citing route id, rendered as walls.
+. *Sound-carrier lattice view*: render the `_<ᵇ`-family relations as
+  nodes annotated with covered-constructor sets and `embeds-into`
+  edges; auto-detect IN/OUT count mismatches.
+. *Per-constructor / per-obligation status matrix* read live from
+  source, replacing the hand-maintained date-stamped tables.
+
+=== Visualise — the always-current diagram
+
+[start=10]
+. *The DAG* with per-node status colour and dependency arrows — the
+  headline ask. One picture replacing the prose mesh of lanes / gates /
+  sub-stages and the "DO NOT reopen" notes.
+. *Lane / gate / tier overlays* as coloured subgraphs, with cross-lane
+  gating edges drawn explicitly ("Lane 4 waits on Lane 1").
+. *Budgeted / "blocks-goal" markers* so a scaffold (`wf-<ᵇʳᶠᵇ`) is
+  never mistaken for the real theorem (`wf-<ᵇʳᶠ`).
+. *Honest-scope & matched-negative annotations* attached to nodes.
+. *Triage workflow* (inbox → working → proven | rejected) as lanes a
+  node moves through, the rejected lane preserving the refutation.
+. *Diagrammatic views for kategoria*: the type-safety *composition
+  lattice* and session-types-as-graded-monads as string/wiring
+  diagrams.
+. *Graduation dashboard for ideas-to-alphas*: maturity (sketch →
+  believe_me-free → postulate-free → graduated) and promotion arrows.
+
+=== "Put back" — coherent updates
+
+[start=17]
+. *Generate/repair `All.agda`* (core): add `open import` for new wired
+  modules; warn on orphans.
+. *Generate/repair `Smoke.agda` pins* (core): emit the per-module
+  `using ( … )` headline blocks; fail on renamed/deleted pins (Smoke's
+  own stated purpose), including the parameterised-module trivial-instance
+  trick.
+. *Sync status labels in one pass* (studio): propagate a status change
+  to `MAP.adoc`, the roadmap lane, the verdict table, and the
+  per-marker ledger simultaneously.
+. *Append-only retraction / open-problem / decision records* (studio):
+  scaffold an `R-YYYY-MM-DD` / `D-YYYY-MM-DD` entry and *find every
+  artefact citing the retracted claim* so no inflated form survives.
+. *Session-arc / ledger emitter* (studio): produce the "where we
+  started / ended / commits / open pieces / next advance / DO NOT
+  reopen" entry from the diff of node statuses across a session.
+. *Per-marker ledger emitter* (studio): write
+  `proof-debt(-triage).md`-shaped tables with `Owner/Plan/Deadline`.
+. *CI gate export* (studio → scripts): emit kernel-cone integrity,
+  no-postulate, wired-coverage, Smoke-pin presence, and baseline-bound
+  checks as runnable scripts, so the visual state is *enforced*, not
+  just displayed.
+. *Parallel-session guardrails* (studio): surface "branch base N
+  commits behind `origin/main`," detect post-squash divergence, and
+  recommend the documented `rebase` / `--force-with-lease` moves.
+
+== Communication model — legible to everyone
+
+Adapted directly from `nextgen-language-evangeliser`. The principle:
+*one proof object, multiple rendering registers, single dispatcher* —
+never separate documents (separate documents are exactly how the
+estate's status tables drifted).
+
+* *Three registers over the same node* (mirroring `viewLayer = RAW |
+  FOLDED | GLYPHED`):
+  ** *RAW* — full Agda term/type, `--safe --without-K` detail, the
+     mathematician's register.
+  ** *FOLDED* — grouped by lemma/section, collapsible sub-proofs,
+     dependency counts.
+  ** *GLYPHED* — glyph-bar + theorem name + one-line "what this
+     guarantees," the newcomer/accessibility register.
+* *A Makaton-style glyph vocabulary* `{symbol, name, meaning, category,
+  usageExample}` with a `legend` view. Candidate glyphs grounded in this
+  corpus: 🛡️ no-postulate/`--safe`, 💎 `--without-K`/no-UIP, 🔄
+  isomorphism/round-trip, 🌿 case analysis, ➡️ composition, ♻️
+  well-founded recursion, ⚖️ "section / left-inverse" (the
+  `no-section-of-collapsing-map` family). Grouped into semantic
+  categories (Soundness, Construction, Equality, Recursion/Termination,
+  Structure).
+* *A 5-slot narrative retargeted to proofs* (the "you were close!"
+  shape, no-shame): *Intuition* (plain English) · *Scope/Caveat* (the
+  honest bound — the existing `honest-scope` / `NotProved-*` discipline
+  maps here exactly) · *Why it matters* · *Guarantee* (the formal
+  content) · *Witness* (the concrete instance).
+* *Audience-parameterised projection*: `--audience=mathematician`
+  surfaces RAW + Guarantee; `--audience=newcomer` surfaces GLYPHED +
+  Intuition + Witness. Same object, audience-selected view.
+* *Progressive disclosure with honest fallback*: if a plain-language
+  gloss is not yet authored for a lemma, fall back to the next register
+  *and say so* — never present a raw term as if it were the gloss.
+* *Confidence/status as a visible register*: "fully verified, 0
+  postulates" vs "partial (1 postulate: `denotation`)" vs "open /
+  refuted." A non-mathematician needs to know *how solid* a claim is.
+* *Difficulty-graded guided tour*: suggest the easiest meaningful next
+  theorem from unseen prerequisites — a guided walk through the proof
+  DAG.
+
+The `warrant_debugger_prototype.jsx` already in `echo-types` is the
+working proof that organisation (Part A) and communication (Part B)
+unify in one artefact; it is the design reference for the
+interactive-phase studio.
+
+== Integration seams (concrete)
+
+=== Echidna — the verification backend (via the Zig API stack)
+
+ArghDA dispatches a wired goal to Echidna and renders the result.
+
+* *Transport (production):* `libzig_api` connector pool —
+  `uapi_connector_create(UAPI_SERVICE_ECHIDNA=3, "http://127.0.0.1:8090")`,
+  then `uapi_connector_call(slot, POST, "/prove", json_theorem, …)`.
+  From AffineScript/Deno: `Deno.dlopen` against `libzig_api.so`. From
+  Rust: `bindgen` over `zig_api.h`.
+* *Transport (prototype):* direct HTTP+JSON to Echidna's port 8090
+  (`/health`, `/prove`, `/verify`, `/backends`, `/explain`). The Zig
+  layer adds verified ABI + pooling + uniform service IDs; the direct
+  path is lighter for an early prototype.
+* *Request:* `Theorem { statement, format: AgdaSyntax | NaturalLang,
+  context, hints }`.
+* *Response → node:* `ProofResult { prover, status (Proven |
+  Counterexample | Inconclusive | ProofError), proofTerm, timeTaken,
+  confidence }` maps onto the node's `status` / `soundness` /
+  `confidence` / proof-term fields.
+* `/backends` + `/explain` drive a "which prover, and why" register.
+
+[NOTE]
+Echidna's HTTP server may be partial today; verify it is listening on
+8090 before designing against it, and treat the `Theorem`/`ProofResult`
+JSON shapes (derived from `Echidna/Prover.idr`) as a contract to pin.
+
+=== TypeLL — proof obligations (port 7800)
+
+`POST /api/v1/generate-obligations` yields `ProofObligation { id:
+"PO-NNNN", description, proposition, origin, status: Pending |
+Discharged | ProvedExternally(prover) | Unresolved | Refuted }`.
+ArghDA ingests obligations as graph nodes and tracks discharge — the
+clean "TypeLL emits, Agda/Echidna discharges, ArghDA shows the
+certificate" loop. (`nextgen-typing/verification/proofs/agda/EchoTyping.agda`
+is the live pattern for cross-repo Agda wiring via `~/.agda/libraries`.)
+
+=== HAR — the "proofs go programmatic" stage
+
+When a proof completes, ArghDA acts as an *event source*:
+
+* Build `AutomationEvent::new(EventSource::Chained{source_target:"arghda"},
+  "proof").with_payload({theorem_id, status:"Proven", prover:"Agda",
+  proof_term, confidence}).with_tag("proof-complete")` and feed it to
+  `Router::route` → `Dispatcher::dispatch`.
+* Two additive extension points in HAR: a `proof-complete` *tag rule*
+  → `rpa-elysium` (zero core changes; the clean prototype path), or a
+  `TargetCapability::ProofVerification` for capability routing; plus a
+  `TargetTransport` impl for the downstream (only `InMemoryTransport`
+  exists today).
+* Caveats to design around: HAR is Phase-1 partial (3 strategies live,
+  only `InMemoryTransport`, ABI not yet FFI-linked); `rpa-elysium`
+  delivery is *AtLeastOnce* (may duplicate) — keep downstream effects
+  idempotent.
+
+Symmetry: Echidna's `ProofResult` JSON is the *upstream* verification
+call; HAR's `AutomationEvent` payload is the *downstream* fan-out.
+ArghDA's stable proof-event schema (`theorem_id, status, prover,
+proof_term, confidence`) bridges them.
+
+=== Groove — discovery / PanLL embedding
+
+`arghda-core` serves `GET /.well-known/groove` advertising e.g.
+`proof-wiring` and `diagram-stream` capabilities (+ `/health`). PanLL
+discovers it by probing known ports and consumes it from a panel via
+the dual-path command pattern, with the live proof-event feed as a
+`Tea_Sub` subscription. Add the core's port to PanLL's mesh-probe list.
+
+== `arghda-studio` — the new RSR-compliant repo (proposed)
+
+A new, fully RSR-compliant repo (default classification → `MPL-2.0`).
+Fastest correct bring-up: clone `rsr-template-repo`, `just init`, then
+reset the 6a2 files from the template's own evolution to ArghDA.
+
+=== Required shape (RSR)
+
+* *Root authority files:* `README.adoc` (with an "AI-Assisted
+  Installation" section), `EXPLAINME.adoc`, `AUDIT.adoc`,
+  `AFFIRMATION.adoc`, `GOVERNANCE.adoc`, `MAINTAINERS.adoc`,
+  `0-AI-MANIFEST.a2ml`, `LICENSE` (MPL-2.0), `CHANGELOG.md`,
+  `CONTRIBUTING.md`, `SECURITY.md` (>10 lines), `coordination.k9`,
+  `Justfile`.
+* *`.machine_readable/6a2/`* — the six A2ML files
+  (`STATE`/`META`/`ECOSYSTEM`/`AGENTIC`/`NEUROSYM`/`PLAYBOOK`) +
+  `anchors/ANCHOR.a2ml` + `CLADE.a2ml`. *META.a2ml must carry the
+  verbatim maintenance-axis strings* the validator greps for
+  (`scoping-first`, `axis-1 = "must > intend > like"`,
+  `idris-unsound-scan = "believe_me/assert_total"`, …).
+* *`.machine_readable/contractiles/`* — Intentfile / Mustfile /
+  Trustfile / Adjustfile + bust / dust. ArghDA's own baselines fit the
+  `Trustfile`/`Adjustfile` model perfectly (e.g. `studio-orphan-modules
+  <= 0`, `affinescript-effect-handlers-in-hotpath == 0`).
+* *`.well-known/`* — `ai.txt`, `humans.txt`, `security.txt` (RFC 9116).
+* *Docs* — `.adoc` only (no `.md` under `docs/`); the SSG is
+  `casket-ssg` (Jekyll banned).
+* *CI hard gates* — `openssf-compliance`, `ts-blocker`,
+  `npm-bun-blocker`, `estate-rules`, `secret-scanner`,
+  `security-policy`, `workflow-linter`, `wellknown-enforcement`,
+  `scorecard-enforcer` (every workflow: SPDX header, `permissions:`
+  block, SHA-pinned actions). The TS/npm blockers are *not* a problem —
+  the studio is AffineScript + Deno.
+* *SPDX header on every file* (MPL-2.0; docs may use CC-BY-SA-4.0);
+  *signed commits* (a critical Mustfile check).
+
+=== Proposed AffineScript module layout
+
+[source]
+----
+src/
+  Model.affine          -- the proof-node graph types (the heart)
+  Status.affine         -- status taxonomy + soundness + tier/gate enums
+  ingest/
+    CoreJson.affine     -- parse arghda-core's DAG + lint + events JSON
+    A2ml.affine         -- STATE.a2ml / contractiles importer
+    Ledger.affine       -- proof-debt(-triage) + MAP.adoc + gate-graph
+  view/
+    Glyphs.affine       -- Makaton-style glyph vocabulary + legend
+    Narrative.affine    -- 5-slot proof narrative (target/audience-aware)
+    Register.affine      -- RAW | FOLDED | GLYPHED dispatcher
+    Svg.affine          -- pure  graph -> SVG  renderer (v1)
+    Html.affine         -- pure  graph -> HTML renderer (v1)
+    Lattice.affine      -- sound-carrier lattice + composition-lattice
+    Matrix.affine       -- per-constructor / per-obligation status grid
+  writeback/
+    Smoke.affine        -- emit Smoke.agda `using` pin blocks (preview)
+    All.affine          -- emit All.agda open-import set (preview)
+    SessionArc.affine   -- session-ledger / retraction / decision docs
+  Cli.affine            -- entry point (Deno-ESM host)
+----
+
+Constraint reminder: keep `view/Svg.affine` and `view/Html.affine`
+*pure* (`graph → string`); host all I/O (read core JSON, write files,
+`fetch` Echidna) at the Deno-ESM edge in `Cli.affine`; use affine types
+for the Groove/connector handles.
+
+== `arghda-core` work needed (finish the spec)
+
+The studio is blocked on the engine emitting real JSON. Per
+`arghda-spec.adoc`'s first-sprint backlog, items 1–3 are done; ArghDA
+needs 4–7 plus a few additions:
+
+. `check <file>` — run `agda`, capture exit code, emit `LintReport`
+  JSON. *(spec item 4; no Agda invocation exists yet)*
+. `promote` / `reject` — the state-machine transitions (file moves +
+  `events.jsonl`). *(spec item 5; not implemented)*
+. `dag` — emit the DAG JSON schema. *Lift the import-graph code out of
+  `lint/orphan_module.rs` (it already computes the edges and throws
+  them away) into a first-class graph module.* *(spec item 6)*
+. The remaining 5 lint rules (`missing-without-k`, `unpinned-headline`,
+  `unjustified-postulate`, `unused-import` via `agda-unused`,
+  `tab-mix`) and the broadened soundness scan (`believe_me`,
+  `primTrustMe`, `TERMINATING`, `funext`, `--cubical`).
+. Content hashing of `proven` (SHA-256 of file + imports) for automatic
+  upstream-invalidation (`proven → inbox`).
+. `/.well-known/groove` manifest + `/health` + a `dag`/event HTTP
+  endpoint for the studio and PanLL to consume.
+. *Add the missing RSR scaffolding to `arghda-core` itself* — it has no
+  `.machine_readable/`, no `Justfile`/Guix today; bring it up to
+  estate standard as part of this work.
+
+== Phased roadmap
+
+[cols="1,2,4"]
+|===
+| Phase | Theme | Contents
+
+| *0* (now)
+| Plan & contract
+| This document; lock the core↔studio JSON contract; scaffold the
+  `arghda-studio` RSR repo; RSR-retrofit `arghda-core`.
+
+| *1*
+| Engine real
+| `arghda-core` `check` / `promote` / `reject` / `dag` / `events.jsonl`
+  / content-hash / 5 remaining lint rules / Groove manifest. *(Rust.)*
+
+| *2*
+| Studio MVP (static)
+| AffineScript proof-node model + core-JSON ingest + A2ML/ledger
+  importers + glyphs + narrative + *static SVG/HTML* RAW/FOLDED/GLYPHED
+  renderers. Dogfood on `echo-types`. ("Take from" + "Visualise".)
+
+| *3*
+| Write-back & coherence
+| `All.agda`/`Smoke.agda` generation (core); ledger / session-arc /
+  retraction generation, drift reconciliation, refuted-route registry,
+  sound-carrier lattice, per-constructor matrix (studio). CI gate
+  export. ("Put back".)
+
+| *4*
+| Verification integration
+| Echidna dispatch via the Zig connector (core); TypeLL
+  `ProofObligation` ingest; confidence/status registers.
+
+| *5*
+| Programmatic stage
+| HAR integration — emit proof-completion `AutomationEvent`s →
+  `rpa-elysium`; the `ideas-to-alphas` graduation/promotion automation.
+
+| *6*
+| Interactive & PanLL
+| When #255/#555 land: AffineScript interactive canvas;
+  `arghda-panll` embedding via Groove + `Tea_Sub`. ArghDA is the
+  forcing function for the toolchain fixes.
+|===
+
+== Open decisions & risks
+
+* *Naming.* "arghda-studio" is a working name; the standalone visual
+  tool could be `arghda` (with the engine staying `arghda-core`) and
+  the PanLL panel `arghda-panll`. Owner's call.
+* *Where the plan lives long-term.* This doc is in `arghda-core/docs/`
+  beside the spec; if `arghda-studio` becomes its own repo, the vision
+  may move or be cross-linked.
+* *Backend maturity.* Echidna's HTTP server, TypeLL's server, and HAR
+  are all early-phase. Phases 4–5 must treat their schemas as contracts
+  to pin and verify-before-build, not finished APIs.
+* *Multi-prover scope.* `arghda-core` is "language-agnostic" only
+  aspirationally today (Agda-hardcoded). Coq/Lean/Idris2 support (for
+  `absolute-zero`, `kategoria`, `ideas-to-alphas`) is a real design
+  task, deferred past the Agda MVP per the original spec's non-goals.
+* *AffineScript drift.* The compiler is alpha with known soundness
+  holes; pin the studio to the genuinely-enforced subset and treat
+  `CAPABILITY-MATRIX.adoc` as the authority on what may be relied upon.
+
+== Provenance
+
+This plan was synthesised from a read-only survey of: `arghda-core`
+(`docs/arghda-spec.adoc`, `src/`), `rsr-template-repo` + `standards`
+(RSR compliance), `kategoria` + `ideas-to-alphas` (pipeline &
+diagrammatic content), `typell` + `nextgen-typing` (kernel & obligations),
+`panll` + `affinescript` (architecture patterns & feasibility),
+`developer-ecosystem` (Unified Zig API Stack & Echidna) +
+`hybrid-automation-router` (HAR), and `echo-types` + `absolute-zero` +
+`nextgen-language-evangeliser` (proof-organisation pain & the
+communication model). No source files in any surveyed repo were
+modified.
