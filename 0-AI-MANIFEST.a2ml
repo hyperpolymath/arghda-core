@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# 0-AI-MANIFEST.a2ml — AI agent entry point (read first)
+
+[metadata]
+version = "0.1.0"
+last-updated = "2026-06-18"
+
+[project]
+name = "arghda-core"
+purpose = "Language-agnostic proof-workspace engine for the arghda visual proof-wiring tool (Agda first). Emits the DAG / events.jsonl JSON contract a visual layer consumes; never proves anything itself."
+
+[entry]
+read-order = [
+  ".machine_readable/6a2/STATE.a2ml",
+  ".machine_readable/6a2/META.a2ml",
+  "README.md",
+  "docs/arghda-spec.adoc",
+  "docs/arghda-vision.adoc",
+]
+
+[ai-allocation]
+agents = [
+  { name = "CLAUDE", role = "Rust engine, lint rules, Agda integration, CI/CD, formal-tooling glue" },
+  { name = "CHATGPT", role = "prose, spec/vision docs, outreach drafts" },
+  { name = "GEMINI", role = "cross-repo audits, dogfood triage, pattern detection" },
+  { name = "VIBE", role = "arghda-studio UI / PanLL panel (AffineScript)" },
+]
+
+[policy]
+rules = [
+  "arghda organises and communicates proofs; Agda proves. Never embed a prover or claim an unverified result.",
+  "Do not bulk-sweep SPDX headers; new files may carry MPL-2.0 from birth.",
+  "Update STATE.a2ml during sessions; do not create per-repo TODO files.",
+  "Keep `just check` green on every change.",
+]

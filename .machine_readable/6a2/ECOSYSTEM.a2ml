@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# ECOSYSTEM.a2ml — Position in the hyperpolymath ecosystem
+
+[metadata]
+project = "arghda-core"
+ecosystem = "hyperpolymath"
+
+[position]
+type = "engine"
+purpose = "The language-agnostic proof-workspace engine for the arghda visual proof-wiring tool. Targets Agda first; the LintRule trait is the extension point for further provers."
+
+[pipeline]
+position = "proof-organisation layer (rides alongside the research-to-production pipeline)"
+chain = "standards -> rsr-template-repo -> arghda-core"
+coordination = "standards"
+
+[related-projects]
+projects = [
+  { name = "arghda-studio", relationship = "downstream-consumer", notes = "Planned AffineScript -> typed-wasm visual layer; consumes the dag JSON + events.jsonl contract; v1 renders static SVG/HTML." },
+  { name = "arghda-panll", relationship = "downstream-consumer", notes = "Planned PanLL panel embedding, discovered via the Groove protocol." },
+  { name = "echo-types", relationship = "dogfood-workspace", notes = "Constructive Agda corpus; arghda's first real workspace. Not a build dependency." },
+  { name = "absolute-zero", relationship = "dogfood-workspace", notes = "Sister Agda corpus under the same --safe --without-K discipline." },
+  { name = "echidna", relationship = "verification-backend", notes = "Multi-prover orchestrator (Unified Zig API service #3, port 8090); arghda dispatches goals to it." },
+  { name = "standards", relationship = "standard-source", notes = "Estate language / licence / RSR policy." },
+  { name = "rsr-template-repo", relationship = "scaffold-source", notes = "RSR compliance template this repo is being aligned to." },
+]

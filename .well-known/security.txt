@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: MPL-2.0
+# RFC 9116 security contact for arghda-core.
+Contact: mailto:j.d.a.jewell@open.ac.uk
+Expires: 2027-06-18T00:00:00Z
+Preferred-Languages: en
+Canonical: https://github.com/hyperpolymath/arghda-core/blob/main/.well-known/security.txt

@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# PLAYBOOK.a2ml — Operational runbook
+
+[metadata]
+version = "0.1.0"
+last-updated = "2026-06-18"
+
+[build]
+# Debug:   just build          (cargo build --all-targets)
+# Release: just build-release  (binary: target/release/arghda)
+
+[test]
+# just test    — cargo test (unit + integration: dag, transitions, smoke)
+# just check   — the full CI gate: fmt-check + clippy -D warnings + build + test
+
+[usage]
+# Lint a tree:          just scan <path>     (arghda scan <path>)
+# Emit the DAG (JSON):  just dag <path>      (arghda dag <path>)
+# Typecheck one file:   arghda check <file>  (needs `agda` on PATH; degrades gracefully)
+# Triage workspace:     arghda init <ws>
+#                       arghda claim|promote|reject|requeue|invalidate <ws> <file>
+#                       arghda events <ws>
+
+[release-process]
+# 1. Update CHANGELOG.md; bump version in Cargo.toml + the 6a2 files.
+# 2. `just check` must pass.
+# 3. Tag v<x.y.z>; push.
+
+[maintenance-operations]
+# Run `just validate` (validate-rsr + check) before claiming release-ready.
+# Re-dogfood `just dag <echo-types>/proofs/agda` after any engine change and
+# confirm the node/edge/blocked counts move as expected.

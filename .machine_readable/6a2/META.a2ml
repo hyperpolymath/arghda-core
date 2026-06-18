@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# META.a2ml — Project meta-level information
+# Architecture decisions, design rationale, governance.
+
+[metadata]
+version = "0.1.0"
+last-updated = "2026-06-18"
+
+[project-info]
+type = "library"  # library | binary | monorepo | service | website
+languages = ["rust"]
+license = "MPL-2.0"
+author = "Jonathan D.A. Jewell (hyperpolymath)"
+
+[architecture-decisions]
+# status = proposed | accepted | deprecated | superseded | rejected
+# - { id = "ADR-001", title = "Rust for the language-agnostic engine", status = "accepted", date = "2026-05-30" }
+# - { id = "ADR-002", title = "Triage transitions are file moves; ground truth is the filesystem", status = "accepted", date = "2026-05-30" }
+# - { id = "ADR-003", title = "Dependency-free RFC 3339 timestamps (hermetic build, no chrono)", status = "accepted", date = "2026-06-18" }
+# - { id = "ADR-004", title = "Orphan reachability is the union of discovered CI roots (All.agda/Smoke.agda)", status = "accepted", date = "2026-06-18" }
+
+[development-practices]
+build-tool = "just"
+container-runtime = "podman"
+ci-platform = "github-actions"
+package-manager = "cargo"  # Rust crate; guix/nix dev-shells are a future addition.
+
+[maintenance-axes]
+scoping-first = true
+execution-order = "axis-1 > axis-2 > axis-3"
+axis-1 = "must > intend > like"
+axis-2 = "corrective > adaptive > perfective"
+axis-3 = "systems > compliance > effects"
+
+[scoping]
+sources = "README, roadmap, status docs, maintenance checklist, CI/security docs"
+marker-scan = "TODO/FIXME/XXX/HACK/STUB/PARTIAL"
+idris-unsound-scan = "believe_me/assert_total"
+
+[axis-2-maintenance-rules]
+corrective-first = true
+adaptive-second = true
+adaptive-focus = "scope-change reconciliation, stale-reference removal, obsolete-work culling"
+perfective-third = true
+perfective-source = "axis-1 honest state after corrective/adaptive updates"
+
+[axis-3-audit-rules]
+audit-focus = "systems in place, documentation explains actual state, safety/security accounted for, observed effects reviewed"
+compliance-focus = "seams/compromises/exception register, bounded exceptions, anti-drift checks"
+drift-risk-example = "single exception broadening into policy violation (e.g. ReScript->TypeScript spread)"
+effects-evidence = "benchmark execution/results and maintainer status dialogue/review"
+
+[design-rationale]
+# arghda-core is the engine half of the arghda split (engine in Rust;
+# arghda-studio presentation in AffineScript -> typed-wasm). It organises,
+# lints, and emits the DAG / events.jsonl JSON contract a visual layer
+# consumes. It never proves: Agda (directly, or via echidna) proves.

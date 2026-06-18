@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# NEUROSYM.a2ml — Hypatia / symbolic-scan configuration
+
+[metadata]
+version = "0.1.0"
+last-updated = "2026-06-18"
+
+[hypatia-config]
+scan-enabled = true
+scan-depth = "standard"  # quick | standard | deep
+report-format = "logtalk"
+
+[symbolic-rules]
+# Repo-local symbolic checks (severity = critical | warn | info):
+# - { name = "no-unsafe-rust", pattern = "unsafe ", severity = "warn" }
+# - { name = "no-panic-on-io", pattern = "\\.unwrap\\(\\)", severity = "info" }
+# Note: arghda's own lint rules (missing-safe-pragma, orphan-module,
+# unjustified-postulate, escape-hatch, tab-mix) are the symbolic layer it
+# applies to *Agda* workspaces; this section is for scanning *this* repo.
+
+[neural-config]
+# confidence-threshold = 0.85

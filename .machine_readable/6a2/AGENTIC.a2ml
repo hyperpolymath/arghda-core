@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# AGENTIC.a2ml — AI agent constraints and capabilities
+
+[metadata]
+version = "0.1.0"
+last-updated = "2026-06-18"
+
+[agent-permissions]
+can-edit-source = true
+can-edit-tests = true
+can-edit-docs = true
+can-edit-config = true
+can-create-files = true
+
+[agent-constraints]
+# What AI agents must NOT do:
+# - arghda never proves: do not embed a prover or claim a result Agda did not return.
+# - Never commit secrets or credentials.
+# - Never bulk-sweep SPDX headers (estate licence guardrail); new files may carry MPL-2.0 from birth.
+# - Never place state files in repository root (must be in .machine_readable/).
+# - Never use the AGPL license (use MPL-2.0).
+# - Keep `just check` (fmt + clippy -D warnings + build + test) green on every change.
+
+[maintenance-integrity]
+fail-closed = true
+require-evidence-per-step = true
+allow-silent-skip = false
+require-rerun-after-fix = true
+release-claim-requires-hard-pass = true
+
+[methodology]
+default-mode = "hybrid"
+
+[automation-hooks]
+# on-enter: Read 0-AI-MANIFEST.a2ml, then STATE.a2ml
+# on-exit:  Update STATE.a2ml with session outcomes
+# on-commit: Run `just check`
