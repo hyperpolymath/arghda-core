@@ -1,4 +1,5 @@
 use crate::event::{self, Event, EventKind};
+use crate::proven::{self, ProvenRecord};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -121,10 +122,65 @@ impl Workspace {
             .with_from(from)
             .with_to(to)
             .with_note(note);
+
+        // Maintain the proven content-hash manifest: record on entry to
+        // `proven`, drop on exit. This is what lets `stale_proven` detect a
+        // file edited after promotion.
+        if to == State::Proven {
+            let mut manifest = proven::load(&self.root)?;
+            manifest.entries.insert(
+                file_name.to_string(),
+                ProvenRecord {
+                    sha256: proven::hash_file(&dst)?,
+                    promoted_at: ev.ts.clone(),
+                },
+            );
+            proven::save(&self.root, &manifest)?;
+        } else if from == State::Proven {
+            let mut manifest = proven::load(&self.root)?;
+            if manifest.entries.remove(file_name).is_some() {
+                proven::save(&self.root, &manifest)?;
+            }
+        }
+
         event::append(&self.root, &ev)
             .with_context(|| format!("logging {:?} for {}", kind, file_name))?;
         Ok(dst)
     }
+
+    /// Proven files whose current content no longer matches the hash recorded
+    /// at promotion (or that were never recorded). These are the candidates
+    /// for `proven -> inbox` invalidation.
+    pub fn stale_proven(&self) -> Result<Vec<StaleEntry>> {
+        let manifest = proven::load(&self.root)?;
+        let mut out = Vec::new();
+        for path in self.list(State::Proven)? {
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let current = proven::hash_file(&path)?;
+            let reason = match manifest.entries.get(name) {
+                None => Some("no recorded hash"),
+                Some(rec) if rec.sha256 != current => Some("content changed since promotion"),
+                Some(_) => None,
+            };
+            if let Some(reason) = reason {
+                out.push(StaleEntry {
+                    file: name.to_string(),
+                    reason,
+                });
+            }
+        }
+        out.sort_by(|a, b| a.file.cmp(&b.file));
+        Ok(out)
+    }
+}
+
+/// A `proven` file flagged stale by [`Workspace::stale_proven`].
+#[derive(Clone, Debug)]
+pub struct StaleEntry {
+    pub file: String,
+    pub reason: &'static str,
 }
 
 /// The event kind for a transition, or `None` if the pair is not a legal

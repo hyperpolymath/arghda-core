@@ -71,6 +71,13 @@ enum Cmd {
     Invalidate { workspace: PathBuf, file: String },
     /// Print the workspace event log.
     Events { workspace: PathBuf },
+    /// List proven files whose content changed since promotion (stale).
+    Stale {
+        workspace: PathBuf,
+        /// Move stale files back to inbox (proven -> inbox).
+        #[arg(long)]
+        invalidate: bool,
+    },
     /// Watch `inbox/` and `working/` in a workspace; print events.
     Watch { workspace: PathBuf },
 }
@@ -105,6 +112,10 @@ fn main() -> Result<()> {
             transition(&workspace, &file, State::Proven, State::Inbox)?
         }
         Cmd::Events { workspace } => events(&workspace)?,
+        Cmd::Stale {
+            workspace,
+            invalidate,
+        } => stale(&workspace, invalidate)?,
         Cmd::Watch { workspace } => watch(&workspace)?,
     }
     Ok(())
@@ -286,6 +297,30 @@ fn events(workspace: &Path) -> Result<()> {
     }
     for ev in &events {
         println!("{}", serde_json::to_string(ev)?);
+    }
+    Ok(())
+}
+
+fn stale(workspace: &Path, invalidate: bool) -> Result<()> {
+    let ws = Workspace::open(workspace)?;
+    let stale = ws.stale_proven()?;
+    if stale.is_empty() {
+        println!("(no stale proven files)");
+        return Ok(());
+    }
+    for s in &stale {
+        println!("stale: {} ({})", s.file, s.reason);
+    }
+    if invalidate {
+        for s in &stale {
+            ws.transition(
+                &s.file,
+                State::Proven,
+                State::Inbox,
+                Some(format!("auto-invalidated: {}", s.reason)),
+            )?;
+            println!("invalidated: {} (proven -> inbox)", s.file);
+        }
     }
     Ok(())
 }
