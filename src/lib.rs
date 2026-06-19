@@ -12,6 +12,7 @@ pub mod hash;
 pub mod lint;
 pub mod proven;
 pub mod timestamp;
+pub mod unused;
 pub mod watcher;
 pub mod workspace;
 

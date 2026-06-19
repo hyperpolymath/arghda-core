@@ -31,6 +31,12 @@ All notable changes to arghda-core are documented here. The format follows
   `^[a-z][A-Za-z0-9-]*$`, per the spec). Detects top-level (column-0)
   signatures only, which gives the export-only filter for free; tolerant of
   multi-line `using` lists; self-skips when no `Smoke.agda` is in scope.
+- `unused-import` (warn): re-emits the findings of the external `agda-unused`
+  tool (spec §Linter rules). Opt-in behind `scan --unused`; runs `agda-unused`
+  per file in local mode with `LC_ALL=C.UTF-8`, parses its `--json` output,
+  and re-emits each finding as an `unused-import` warning attributed to the
+  file. Degrades gracefully (with a note) when `agda-unused` is not on `PATH`,
+  mirroring how `check` tolerates a missing `agda`.
 - RSR scaffolding: `.machine_readable/6a2/` artefacts, `0-AI-MANIFEST.a2ml`,
   `Justfile`, `.well-known/`, and community-health files.
 - Content-hash invalidation of `proven`: promotion records a SHA-256 of the

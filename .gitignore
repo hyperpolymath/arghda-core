@@ -1,6 +1,9 @@
 # Rust build artefacts
 target/
 
+# Haskell / cabal build artefacts (from building agda-unused locally)
+dist-newstyle/
+
 # Editor / tooling backups
 *.bak
 *~

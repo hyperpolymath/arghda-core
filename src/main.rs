@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, check_file, default_rules, event, graph, rules_with_config, run_lints, watcher,
-    LintRule, RuleConfig, State, Workspace,
+    build_dag, check_file, default_rules, event, graph, rules_with_config, run_lints, unused,
+    watcher, LintRule, RuleConfig, State, Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -39,6 +39,11 @@ enum Cmd {
         /// (`unpinned-headline` rule). Defaults to the spec pattern.
         #[arg(long)]
         headline_pattern: Option<String>,
+        /// Also run the external `agda-unused` analyser and re-emit its
+        /// findings as `unused-import` warnings (requires `agda-unused` on
+        /// PATH; skipped with a note if absent).
+        #[arg(long)]
+        unused: bool,
         /// Emit the report as JSON instead of human-readable text.
         #[arg(long)]
         json: bool,
@@ -101,8 +106,9 @@ fn main() -> Result<()> {
             path,
             entry,
             headline_pattern,
+            unused,
             json,
-        } => scan(&path, &entry, headline_pattern.as_deref(), json)?,
+        } => scan(&path, &entry, headline_pattern.as_deref(), unused, json)?,
         Cmd::Check {
             file,
             include_root,
@@ -142,6 +148,7 @@ fn scan(
     include_root: &Path,
     entry: &[PathBuf],
     headline_pattern: Option<&str>,
+    unused: bool,
     json: bool,
 ) -> Result<()> {
     let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern)?;
@@ -151,9 +158,6 @@ fn scan(
     };
 
     let mut reports = Vec::new();
-    let mut hard_blocks = 0usize;
-    let mut warns = 0usize;
-
     for entry in WalkDir::new(include_root)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -164,17 +168,45 @@ fn scan(
         }
         let report =
             run_lints(path, &ctx, &rules).with_context(|| format!("linting {}", path.display()))?;
-        hard_blocks += report.hard_blocks().count();
-        warns += report.warns().count();
         reports.push(report);
     }
+    let files_scanned = reports.len();
+
+    // Optional unused-code pass via the external `agda-unused` (per file,
+    // local mode). Opt-in because it needs the external tool and re-checks
+    // each file. Findings attach to that file's report.
+    if unused {
+        let mut available = true;
+        let mut saw_error = false;
+        for report in &mut reports {
+            let check = unused::check_file(&report.file, include_root)?;
+            if !check.available {
+                available = false;
+                break;
+            }
+            saw_error |= check.kind.as_deref() == Some("error");
+            for d in check.diagnostics {
+                report.push(d);
+            }
+        }
+        if !available {
+            eprintln!("note: `agda-unused` not found on PATH; skipping unused-import findings");
+        } else if saw_error {
+            eprintln!(
+                "note: agda-unused could not analyse some files; unused-import findings may be incomplete"
+            );
+        }
+    }
+
+    let hard_blocks: usize = reports.iter().map(|r| r.hard_blocks().count()).sum();
+    let warns: usize = reports.iter().map(|r| r.warns().count()).sum();
 
     if json {
         let payload = serde_json::json!({
             "version": "0.1",
             "include_root": include_root,
             "entry_modules": roots,
-            "files_scanned": reports.len(),
+            "files_scanned": files_scanned,
             "hard_blocks": hard_blocks,
             "warns": warns,
             "reports": reports,
