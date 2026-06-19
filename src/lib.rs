@@ -12,6 +12,7 @@ pub mod hash;
 pub mod lint;
 pub mod proven;
 pub mod timestamp;
+pub mod unused;
 pub mod watcher;
 pub mod workspace;
 
@@ -21,4 +22,5 @@ pub use diagnostic::{Diagnostic, LintReport, Severity};
 pub use event::{Event, EventKind};
 pub use graph::{build as build_graph, ImportGraph};
 pub use lint::{default_rules, rules_with_config, run_lints, LintRule, RuleConfig};
+pub use unused::{find_unused, UnusedOutcome};
 pub use workspace::{StaleEntry, State, Workspace};

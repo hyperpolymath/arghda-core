@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, check_file, default_rules, event, graph, rules_with_config, run_lints, watcher,
-    LintRule, RuleConfig, State, Workspace,
+    build_dag, check_file, default_rules, event, find_unused, graph, rules_with_config, run_lints,
+    watcher, Diagnostic, LintReport, LintRule, RuleConfig, State, Workspace,
 };
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use walkdir::WalkDir;
@@ -39,6 +40,11 @@ enum Cmd {
         /// (`unpinned-headline` rule). Defaults to the spec pattern.
         #[arg(long)]
         headline_pattern: Option<String>,
+        /// Also run the external `agda-unused` analyser and re-emit its
+        /// findings as `unused-import` warnings (requires `agda-unused` on
+        /// PATH; skipped with a note if absent).
+        #[arg(long)]
+        unused: bool,
         /// Emit the report as JSON instead of human-readable text.
         #[arg(long)]
         json: bool,
@@ -101,8 +107,9 @@ fn main() -> Result<()> {
             path,
             entry,
             headline_pattern,
+            unused,
             json,
-        } => scan(&path, &entry, headline_pattern.as_deref(), json)?,
+        } => scan(&path, &entry, headline_pattern.as_deref(), unused, json)?,
         Cmd::Check {
             file,
             include_root,
@@ -142,6 +149,7 @@ fn scan(
     include_root: &Path,
     entry: &[PathBuf],
     headline_pattern: Option<&str>,
+    unused: bool,
     json: bool,
 ) -> Result<()> {
     let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern)?;
@@ -151,9 +159,6 @@ fn scan(
     };
 
     let mut reports = Vec::new();
-    let mut hard_blocks = 0usize;
-    let mut warns = 0usize;
-
     for entry in WalkDir::new(include_root)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -164,17 +169,34 @@ fn scan(
         }
         let report =
             run_lints(path, &ctx, &rules).with_context(|| format!("linting {}", path.display()))?;
-        hard_blocks += report.hard_blocks().count();
-        warns += report.warns().count();
         reports.push(report);
     }
+    let files_scanned = reports.len();
+
+    // Optional project-level unused-code pass via the external `agda-unused`.
+    if unused {
+        let outcome = find_unused(include_root, &roots)?;
+        if !outcome.available {
+            eprintln!("note: `agda-unused` not found on PATH; skipping unused-import findings");
+        } else {
+            if outcome.kind.as_deref() == Some("error") {
+                eprintln!(
+                    "note: agda-unused reported an analysis error; unused-import findings may be incomplete"
+                );
+            }
+            merge_unused(&mut reports, outcome.diagnostics);
+        }
+    }
+
+    let hard_blocks: usize = reports.iter().map(|r| r.hard_blocks().count()).sum();
+    let warns: usize = reports.iter().map(|r| r.warns().count()).sum();
 
     if json {
         let payload = serde_json::json!({
             "version": "0.1",
             "include_root": include_root,
             "entry_modules": roots,
-            "files_scanned": reports.len(),
+            "files_scanned": files_scanned,
             "hard_blocks": hard_blocks,
             "warns": warns,
             "reports": reports,
@@ -198,6 +220,32 @@ fn scan(
         );
     }
     Ok(())
+}
+
+/// Attribute `agda-unused` findings to the scanned per-file reports by
+/// canonical path. A finding for a file that was not scanned (rare) gets its
+/// own report so nothing is silently dropped.
+fn merge_unused(reports: &mut Vec<LintReport>, diags: Vec<Diagnostic>) {
+    let mut by_canon: HashMap<PathBuf, usize> = HashMap::new();
+    for (idx, r) in reports.iter().enumerate() {
+        if let Ok(c) = std::fs::canonicalize(&r.file) {
+            by_canon.insert(c, idx);
+        }
+    }
+    for d in diags {
+        let canon = std::fs::canonicalize(&d.file).ok();
+        if let Some(idx) = canon.as_ref().and_then(|c| by_canon.get(c).copied()) {
+            reports[idx].push(d);
+        } else {
+            let idx = reports.len();
+            if let Some(c) = canon {
+                by_canon.insert(c, idx);
+            }
+            let mut r = LintReport::new(d.file.clone());
+            r.push(d);
+            reports.push(r);
+        }
+    }
 }
 
 fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
