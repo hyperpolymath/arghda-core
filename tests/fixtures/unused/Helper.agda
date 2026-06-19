@@ -1,6 +1,6 @@
+{-# OPTIONS --safe --without-K #-}
 module Helper where
 
--- A trivial, dependency-free definition. Nothing references it, so a
--- whole-project (`--global`) agda-unused pass should also flag it.
+-- A trivial, dependency-free definition.
 helper : Set₁
 helper = Set

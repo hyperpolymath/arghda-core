@@ -30,6 +30,11 @@ record.
     its default `^[a-z][A-Za-z0-9-]*$` is deliberately broad, so operators
     narrow it to their own headline-naming convention. Self-skips when no
     `Smoke.agda` is in scope (e.g. a single-file `check`)
+  - `unused-import` (warn) — re-emits the findings of the external
+    [`agda-unused`](https://github.com/msuperdock/agda-unused) tool. Opt-in
+    behind `scan --unused` (it runs `agda-unused` per file in local mode and
+    re-checks each file); skipped with a note if the binary is not on `PATH`.
+    Invoked with `LC_ALL=C.UTF-8` so it can read UTF-8 Agda sources
 - Workspace state machine — transitions are file moves, each logged to
   `.arghda/events.jsonl` (`claim`, `promote`, `reject`, `requeue`,
   `invalidate`)
@@ -51,12 +56,12 @@ plus standalone scratch files. `scan` also flags the files deliberately
 outside the `--safe --without-K` kernel cone (`Fidelity.agda`, the cubical
 island, the postulated shadow).
 
-Not yet: `unused-import` (shells out to `agda-unused`); the DAG `headlines`
-field (the extractor now exists for `unpinned-headline`, but the per-node
-`headlines` array in the DAG schema is still unpopulated); persisting the
-headline pattern in `.arghda/config.toml` (currently a CLI flag); the Groove
-service manifest. (`missing-without-k` is subsumed by `missing-safe-pragma`,
-which already reports a missing `--without-K`.)
+Not yet: the DAG `headlines` field (the extractor now exists for
+`unpinned-headline`, but the per-node `headlines` array in the DAG schema is
+still unpopulated); persisting the headline pattern in `.arghda/config.toml`
+(currently a CLI flag); the Groove service manifest. (`missing-without-k` is
+subsumed by `missing-safe-pragma`, which already reports a missing
+`--without-K`.)
 
 ## Build
 
