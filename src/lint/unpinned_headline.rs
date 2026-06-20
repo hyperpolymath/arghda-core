@@ -211,7 +211,10 @@ fn collect_pinned(contents: &str, out: &mut BTreeSet<String>) {
 
 /// Top-level (column-0) type-signature names matching `matcher`, paired with
 /// the 1-based line they were declared on. `a b c : T` yields each name.
-fn headline_decls(contents: &str, matcher: &Regex) -> Vec<(String, usize)> {
+///
+/// Public so the `dag` builder can populate each node's `headlines` array
+/// (the spec's DAG schema) from the same extractor this rule uses.
+pub fn headline_decls(contents: &str, matcher: &Regex) -> Vec<(String, usize)> {
     let mut out = Vec::new();
     let mut in_block_comment = false;
 

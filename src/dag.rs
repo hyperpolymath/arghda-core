@@ -9,9 +9,10 @@
 
 use crate::diagnostic::Severity;
 use crate::graph::{self, Edge};
-use crate::lint::{run_lints, LintContext, LintRule};
+use crate::lint::{run_lints, unpinned_headline, LintContext, LintRule};
 use crate::timestamp::now_rfc3339;
-use anyhow::Result;
+use anyhow::{Context, Result};
+use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -31,6 +32,9 @@ pub struct DagNode {
     /// `clean` | `warn` | `blocked` (lint-derived; not a proof claim).
     pub status: &'static str,
     pub lint: LintSummary,
+    /// Top-level theorem names this module declares that match the headline
+    /// pattern (sorted, deduped). The spec's per-node `headlines` array.
+    pub headlines: Vec<String>,
 }
 
 /// A module that cannot advance, and why.
@@ -54,13 +58,17 @@ pub struct DagDocument {
 }
 
 /// Build the DAG document for the source tree at `include_root`, using
-/// `entry_modules` (the union of CI roots) for the orphan-reachability rule
-/// and `rules` as the lint pack.
+/// `entry_modules` (the union of CI roots) for the orphan-reachability rule,
+/// `rules` as the lint pack, and `headline_pattern` (the same regex the
+/// `unpinned-headline` rule uses) to populate each node's `headlines` array.
 pub fn build(
     include_root: &Path,
     entry_modules: &[PathBuf],
     rules: &[Box<dyn LintRule>],
+    headline_pattern: &str,
 ) -> Result<DagDocument> {
+    let headline_matcher = Regex::new(headline_pattern)
+        .with_context(|| format!("compiling headline pattern `{headline_pattern}`"))?;
     let graph = graph::build(include_root)?;
     let ctx = LintContext {
         include_root,
@@ -95,11 +103,23 @@ pub fn build(
             "clean"
         };
 
+        // Headline theorem names this module declares (sorted, deduped),
+        // extracted with the same logic as the `unpinned-headline` rule.
+        let contents = std::fs::read_to_string(&abs).unwrap_or_default();
+        let mut headlines: Vec<String> =
+            unpinned_headline::headline_decls(&contents, &headline_matcher)
+                .into_iter()
+                .map(|(name, _line)| name)
+                .collect();
+        headlines.sort();
+        headlines.dedup();
+
         nodes.push(DagNode {
             id: gn.id.clone(),
             file: gn.file.clone(),
             status,
             lint: summary,
+            headlines,
         });
     }
 

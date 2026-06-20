@@ -174,7 +174,8 @@ fn scan(
     unused: bool,
     json: bool,
 ) -> Result<()> {
-    let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern, config)?;
+    let (roots, rules, _cfg) =
+        resolve_roots_and_rules(include_root, entry, headline_pattern, config)?;
     let ctx = LintContext {
         include_root,
         entry_modules: &roots,
@@ -324,8 +325,9 @@ fn dag(
     headline_pattern: Option<&str>,
     config: Option<&Path>,
 ) -> Result<()> {
-    let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern, config)?;
-    let doc = build_dag(include_root, &roots, &rules)?;
+    let (roots, rules, cfg) =
+        resolve_roots_and_rules(include_root, entry, headline_pattern, config)?;
+    let doc = build_dag(include_root, &roots, &rules, &cfg.headline_pattern)?;
     println!("{}", serde_json::to_string_pretty(&doc)?);
     Ok(())
 }
@@ -364,7 +366,7 @@ fn resolve_roots_and_rules(
     entry: &[PathBuf],
     headline_pattern: Option<&str>,
     config: Option<&Path>,
-) -> Result<(Vec<PathBuf>, RuleSet)> {
+) -> Result<(Vec<PathBuf>, RuleSet, RuleConfig)> {
     for e in entry {
         if !e.is_file() {
             anyhow::bail!("entry module not found: {}", e.display());
@@ -388,7 +390,7 @@ fn resolve_roots_and_rules(
     } else {
         rules_with_config(&cfg)?
     };
-    Ok((roots, rules))
+    Ok((roots, rules, cfg))
 }
 
 fn transition(workspace: &Path, file: &str, from: State, to: State) -> Result<()> {
