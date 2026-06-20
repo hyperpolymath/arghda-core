@@ -26,10 +26,11 @@ record.
   - `unpinned-headline` (warn) — a top-level theorem whose name matches the
     headline pattern is not pinned in any `Smoke.agda` via a `using ( … )`
     clause (the estate "every headline pinned in Smoke" discipline). The
-    pattern is operator-configurable (`--headline-pattern <regex>`);
-    its default `^[a-z][A-Za-z0-9-]*$` is deliberately broad, so operators
-    narrow it to their own headline-naming convention. Self-skips when no
-    `Smoke.agda` is in scope (e.g. a single-file `check`)
+    pattern is operator-configurable (via `.arghda/config.toml` or
+    `--headline-pattern <regex>`); its default `^[a-z][A-Za-z0-9-]*$` is
+    deliberately broad, so operators narrow it to their own headline-naming
+    convention. Self-skips when no `Smoke.agda` is in scope (e.g. a
+    single-file `check`)
   - `unused-import` (warn) — re-emits the findings of the external
     [`agda-unused`](https://github.com/msuperdock/agda-unused) tool. Opt-in
     behind `scan --unused` (it runs `agda-unused` per file in local mode and
@@ -56,10 +57,18 @@ plus standalone scratch files. `scan` also flags the files deliberately
 outside the `--safe --without-K` kernel cone (`Fidelity.agda`, the cubical
 island, the postulated shadow).
 
+Configuration: `scan` and `dag` read `.arghda/config.toml` (from
+`<PATH>/.arghda/config.toml`, or an explicit `--config <file>`). Precedence is
+built-in default < `config.toml` < CLI flag. Current schema:
+
+```toml
+[lint]
+headline_pattern = "^[a-z][A-Za-z0-9-]*$"
+```
+
 Not yet: the DAG `headlines` field (the extractor now exists for
 `unpinned-headline`, but the per-node `headlines` array in the DAG schema is
-still unpopulated); persisting the headline pattern in `.arghda/config.toml`
-(currently a CLI flag); the Groove service manifest. (`missing-without-k` is
+still unpopulated); the Groove service manifest. (`missing-without-k` is
 subsumed by `missing-safe-pragma`, which already reports a missing
 `--without-K`.)
 

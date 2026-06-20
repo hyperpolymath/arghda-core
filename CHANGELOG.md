@@ -37,6 +37,11 @@ All notable changes to arghda-core are documented here. The format follows
   and re-emits each finding as an `unused-import` warning attributed to the
   file. Degrades gracefully (with a note) when `agda-unused` is not on `PATH`,
   mirroring how `check` tolerates a missing `agda`.
+- `.arghda/config.toml` operator configuration (the spec's open-question
+  surface): `scan` / `dag` read a `[lint] headline_pattern` override from
+  `<PATH>/.arghda/config.toml` (or an explicit `--config <file>`). Precedence
+  is built-in default < `config.toml` < CLI `--headline-pattern`. Missing file
+  ⇒ defaults; unknown keys are rejected so typos surface.
 - RSR scaffolding: `.machine_readable/6a2/` artefacts, `0-AI-MANIFEST.a2ml`,
   `Justfile`, `.well-known/`, and community-health files.
 - Content-hash invalidation of `proven`: promotion records a SHA-256 of the

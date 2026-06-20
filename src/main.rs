@@ -39,6 +39,10 @@ enum Cmd {
         /// (`unpinned-headline` rule). Defaults to the spec pattern.
         #[arg(long)]
         headline_pattern: Option<String>,
+        /// Path to an `.arghda/config.toml`. Defaults to
+        /// `<PATH>/.arghda/config.toml` if present.
+        #[arg(long)]
+        config: Option<PathBuf>,
         /// Also run the external `agda-unused` analyser and re-emit its
         /// findings as `unused-import` warnings (requires `agda-unused` on
         /// PATH; skipped with a note if absent).
@@ -71,6 +75,10 @@ enum Cmd {
         /// (`unpinned-headline` rule). Defaults to the spec pattern.
         #[arg(long)]
         headline_pattern: Option<String>,
+        /// Path to an `.arghda/config.toml`. Defaults to
+        /// `<PATH>/.arghda/config.toml` if present.
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
     /// Claim a file: inbox -> working.
     Claim { workspace: PathBuf, file: String },
@@ -106,9 +114,17 @@ fn main() -> Result<()> {
             path,
             entry,
             headline_pattern,
+            config,
             unused,
             json,
-        } => scan(&path, &entry, headline_pattern.as_deref(), unused, json)?,
+        } => scan(
+            &path,
+            &entry,
+            headline_pattern.as_deref(),
+            config.as_deref(),
+            unused,
+            json,
+        )?,
         Cmd::Check {
             file,
             include_root,
@@ -118,7 +134,13 @@ fn main() -> Result<()> {
             path,
             entry,
             headline_pattern,
-        } => dag(&path, &entry, headline_pattern.as_deref())?,
+            config,
+        } => dag(
+            &path,
+            &entry,
+            headline_pattern.as_deref(),
+            config.as_deref(),
+        )?,
         Cmd::Claim { workspace, file } => {
             transition(&workspace, &file, State::Inbox, State::Working)?
         }
@@ -148,10 +170,11 @@ fn scan(
     include_root: &Path,
     entry: &[PathBuf],
     headline_pattern: Option<&str>,
+    config: Option<&Path>,
     unused: bool,
     json: bool,
 ) -> Result<()> {
-    let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern)?;
+    let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern, config)?;
     let ctx = LintContext {
         include_root,
         entry_modules: &roots,
@@ -295,11 +318,40 @@ fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn dag(include_root: &Path, entry: &[PathBuf], headline_pattern: Option<&str>) -> Result<()> {
-    let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern)?;
+fn dag(
+    include_root: &Path,
+    entry: &[PathBuf],
+    headline_pattern: Option<&str>,
+    config: Option<&Path>,
+) -> Result<()> {
+    let (roots, rules) = resolve_roots_and_rules(include_root, entry, headline_pattern, config)?;
     let doc = build_dag(include_root, &roots, &rules)?;
     println!("{}", serde_json::to_string_pretty(&doc)?);
     Ok(())
+}
+
+/// Build the lint `RuleConfig` with precedence default < `.arghda/config.toml`
+/// < CLI flag. An explicit `--config` that does not exist is an error; the
+/// default discovery location (`<include_root>/.arghda/config.toml`) is
+/// silently optional.
+fn resolve_config(
+    include_root: &Path,
+    config: Option<&Path>,
+    headline_pattern: Option<&str>,
+) -> Result<RuleConfig> {
+    let mut cfg = match config {
+        Some(p) => {
+            if !p.is_file() {
+                anyhow::bail!("config file not found: {}", p.display());
+            }
+            arghda_core::config::load_file(p)?
+        }
+        None => arghda_core::config::load_from_dir(include_root)?,
+    };
+    if let Some(p) = headline_pattern {
+        cfg.headline_pattern = p.to_string();
+    }
+    Ok(cfg)
 }
 
 /// Resolve the root modules and the matching lint pack for `scan`/`dag`.
@@ -311,6 +363,7 @@ fn resolve_roots_and_rules(
     include_root: &Path,
     entry: &[PathBuf],
     headline_pattern: Option<&str>,
+    config: Option<&Path>,
 ) -> Result<(Vec<PathBuf>, RuleSet)> {
     for e in entry {
         if !e.is_file() {
@@ -322,10 +375,7 @@ fn resolve_roots_and_rules(
     } else {
         entry.to_vec()
     };
-    let mut cfg = RuleConfig::default();
-    if let Some(p) = headline_pattern {
-        cfg.headline_pattern = p.to_string();
-    }
+    let cfg = resolve_config(include_root, config, headline_pattern)?;
     let rules: RuleSet = if roots.is_empty() {
         eprintln!(
             "note: no root modules (All.agda/Smoke.agda) found under {}; skipping orphan-module rule",
