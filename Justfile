@@ -32,8 +32,13 @@ fmt-check:
 lint:
     cargo clippy --all-targets -- -D warnings
 
+# SPDX licence invariant: MPL-2.0 for code/config/scripts, CC-BY-SA-4.0 for
+# prose; third-party / generated / test data excluded (CI gate).
+license-check:
+    bash scripts/check-spdx.sh
+
 # The full CI gate, exactly what .github/workflows/rust-ci.yml runs.
-check: fmt-check lint build test
+check: fmt-check lint license-check build test
 
 # Alias for CI.
 ci: check

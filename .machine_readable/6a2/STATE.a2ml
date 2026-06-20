@@ -34,15 +34,13 @@ milestones = [
 ]
 
 [blockers-and-issues]
-# No active blockers. v0.1 lint set + DAG schema (arghda-spec.adoc) are complete.
-# Known compliance gap (owner-manual only, per LICENCE-POLICY A2 — never an
-# agent sweep): src/*.rs lack per-file `// SPDX-License-Identifier: MPL-2.0`
-# headers. The repo is declared MPL-2.0 (Cargo.toml, LICENSE); applying the
-# per-file headers is owner-driven manual work.
+# No active blockers. v0.1 lint set + DAG schema (arghda-spec.adoc) are
+# complete. The SPDX licence invariant is applied and enforced
+# (scripts/check-spdx.sh; .machine_readable/licensing-policy.toml).
 
 [critical-next-actions]
 actions = [
-  "Owner-manual: apply MPL-2.0 SPDX headers to src/*.rs (no agent bulk sweep — LICENCE-POLICY A2)",
+  "Formalise template-applicability rules (capability-gated RSR profile: carry a template module iff the repo declares the capability it serves) — estate-wide, candidate for hyperpolymath/standards",
   "Extend content-hash invalidation to cover transitive imports (needs include-root tracking)",
   "Serve /.well-known/groove for PanLL discovery (Groove protocol)",
   "Scaffold arghda-studio (AffineScript visual layer consuming the dag JSON)",

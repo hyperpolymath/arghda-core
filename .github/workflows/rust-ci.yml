@@ -49,6 +49,9 @@ jobs:
           cargo --version
           rustup component add clippy rustfmt
 
+      - name: SPDX licence invariant
+        run: bash scripts/check-spdx.sh
+
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 

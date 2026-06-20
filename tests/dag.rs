@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! `dag` document construction over the fixtures.
 
 use arghda_core::lint::unpinned_headline::DEFAULT_HEADLINE_PATTERN;

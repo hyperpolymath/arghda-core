@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! `escape-hatch` (warn) — surface soundness escape hatches.
 //!
 //! Flags termination-checker overrides (`{-# TERMINATING #-}`,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! Workspace state-machine transitions and the event log.
 
 use arghda_core::{event, EventKind, State, Workspace};

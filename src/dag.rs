@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! The DAG document — the JSON contract a visual layer consumes.
 //!
 //! Builds on the import graph (`crate::graph`) plus a lint pass over every

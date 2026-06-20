@@ -137,5 +137,10 @@ link:EXPLAINME.adoc[`EXPLAINME.adoc`] as the orientation pointer.
 
 Code, configuration and scripts are `MPL-2.0` (see link:LICENSE[LICENSE]);
 prose documentation is `CC-BY-SA-4.0`, per the
-https://github.com/hyperpolymath/standards[hyperpolymath licence policy].
-SPDX headers are owner-managed and applied manually per file.
+https://github.com/hyperpolymath/standards[hyperpolymath licence policy] (Rule
+1). This split is a **formal invariant**: every tracked file carries the
+appropriate SPDX header, checked by `scripts/check-spdx.sh` in `just check` and
+in CI. Third-party, generated, and test-data files are explicitly excluded
+(link:.machine_readable/licensing-policy.toml[`licensing-policy.toml`]) and are
+never relicensed — vendoring third-party source in-tree fails the check until
+it is listed as excluded with its original SPDX preserved.
