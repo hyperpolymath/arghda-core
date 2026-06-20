@@ -27,7 +27,7 @@ milestones = [
   { name = "State machine (claim/promote/reject/requeue/invalidate) + events.jsonl", completion = 100 },
   { name = "`check` command (Agda typecheck + lint verdict)", completion = 100 },
   { name = "Multi-root reachability (union of discovered CI roots)", completion = 100 },
-  { name = "Content-hash invalidation of proven (file-level; transitive imports deferred)", completion = 75 },
+  { name = "Content-hash invalidation of proven (file-level + transitive-import closure via [proven] include_root)", completion = 100 },
   { name = "Operator config (.arghda/config.toml + --headline-pattern + --config)", completion = 100 },
   { name = "RSR / standards alignment (.machine_readable, README.adoc, EXPLAINME, LICENSE, .well-known)", completion = 100 },
   { name = "Groove service manifest (/.well-known/groove) for PanLL discovery", completion = 0 },
@@ -40,8 +40,8 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "Template-applicability: rsr-profile.a2ml declares preset rust-cli (landed); estate policy + gate model + reference checker filed in hyperpolymath/standards#391. Follow-up: wire scripts/check-rsr-profile.sh into CI once standards#391 lands.",
-  "Extend content-hash invalidation to cover transitive imports (needs include-root tracking)",
+  "Template-applicability: rsr-profile.a2ml declares capabilities (landed); estate policy + gate model + reference checker landed in hyperpolymath/standards#391 + #392 (pure capability-gating). Follow-up: wire the standards rsr-profile check into CI.",
+  "Transitive-import closure hashing landed (workspace [proven] include_root); follow-up: also expose it as a --include-root CLI flag on promote/stale.",
   "Serve /.well-known/groove for PanLL discovery (Groove protocol)",
   "Scaffold arghda-studio (AffineScript visual layer consuming the dag JSON)",
 ]

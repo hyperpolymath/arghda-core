@@ -128,13 +128,20 @@ impl Workspace {
 
         // Maintain the proven content-hash manifest: record on entry to
         // `proven`, drop on exit. This is what lets `stale_proven` detect a
-        // file edited after promotion.
+        // file edited after promotion. When the workspace declares a source
+        // tree (`[proven] include_root`), also record the transitive-import
+        // closure hash so an edit to a *dependency* invalidates the file too.
         if to == State::Proven {
             let mut manifest = proven::load(&self.root)?;
+            let closure_sha256 = match crate::config::proven_include_root(&self.root)? {
+                Some(root) => Some(proven::closure_hash(&dst, &root)?),
+                None => None,
+            };
             manifest.entries.insert(
                 file_name.to_string(),
                 ProvenRecord {
                     sha256: proven::hash_file(&dst)?,
+                    closure_sha256,
                     promoted_at: ev.ts.clone(),
                 },
             );
@@ -156,6 +163,7 @@ impl Workspace {
     /// for `proven -> inbox` invalidation.
     pub fn stale_proven(&self) -> Result<Vec<StaleEntry>> {
         let manifest = proven::load(&self.root)?;
+        let include_root = crate::config::proven_include_root(&self.root)?;
         let mut out = Vec::new();
         for path in self.list(State::Proven)? {
             let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
@@ -165,7 +173,15 @@ impl Workspace {
             let reason = match manifest.entries.get(name) {
                 None => Some("no recorded hash"),
                 Some(rec) if rec.sha256 != current => Some("content changed since promotion"),
-                Some(_) => None,
+                // Own bytes match: if a closure hash was recorded and the
+                // source tree is still known, a mismatch now means a
+                // transitive import changed under the file.
+                Some(rec) => match (&rec.closure_sha256, &include_root) {
+                    (Some(stored), Some(root)) if proven::closure_hash(&path, root)? != *stored => {
+                        Some("a transitive import changed since promotion")
+                    }
+                    _ => None,
+                },
             };
             if let Some(reason) = reason {
                 out.push(StaleEntry {

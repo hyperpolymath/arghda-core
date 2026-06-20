@@ -9,10 +9,12 @@
 //! can be sent back to `inbox` — the `proven -> inbox` invalidation from
 //! `docs/arghda-spec.adoc`.
 //!
-//! v1 hashes the file content only. Hashing a file *plus its transitive
-//! imports* (the spec's full form) needs the workspace to know the source
-//! tree's include root, which the flat triage layout does not yet carry;
-//! that is a documented follow-on.
+//! [`hash_file`] hashes the file's own bytes. [`closure_hash`] additionally
+//! folds in every transitive import that resolves inside a source-tree
+//! include root — the spec's full form, so a promoted file goes stale when a
+//! proof *under* it changes, not only when it is edited. The include root is
+//! a workspace property (`[proven] include_root` in `.arghda/config.toml`);
+//! when it is unset, only own-bytes hashing applies.
 
 use crate::hash::sha256_hex;
 use anyhow::{Context, Result};
@@ -26,7 +28,14 @@ pub const HASHES_FILE: &str = "hashes.json";
 /// What was recorded when a file entered `proven`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProvenRecord {
+    /// SHA-256 of the file's own bytes.
     pub sha256: String,
+    /// SHA-256 of the file *and its transitive-import closure*, recorded when
+    /// a source-tree include root was known at promotion. `None` for files
+    /// promoted without one (own-bytes checking only); absent in older
+    /// manifests, which still load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closure_sha256: Option<String>,
     pub promoted_at: String,
 }
 
@@ -66,4 +75,35 @@ pub fn save(ws_root: &Path, manifest: &ProvenManifest) -> Result<()> {
 pub fn hash_file(path: &Path) -> Result<String> {
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     Ok(sha256_hex(&bytes))
+}
+
+/// SHA-256 over `file`'s own bytes plus the bytes of every transitive import
+/// that resolves to a file inside `include_root`, in deterministic module
+/// order. This is the spec's full `proven` invalidation form: a promoted file
+/// is stale not only when it is edited, but when any proof it depends on is.
+///
+/// `file` may live outside `include_root` (the usual case — it has been moved
+/// into the triage `proven/` dir); its imports are still resolved against the
+/// source tree at `include_root`. Imports that do not resolve in-tree (stdlib
+/// / external) are skipped, exactly as the import graph omits them.
+pub fn closure_hash(file: &Path, include_root: &Path) -> Result<String> {
+    let mut deps: BTreeMap<String, String> = BTreeMap::new();
+    for module in crate::graph::transitive_imports(file, include_root)? {
+        let path = crate::graph::module_to_path(&module, include_root);
+        if path.is_file() {
+            deps.insert(module, hash_file(&path)?);
+        }
+    }
+    // Entry's own hash first, then sorted `module\0hash` lines: deterministic,
+    // and sensitive to a dependency being added, removed, or edited.
+    let mut buf = String::with_capacity(72 * (deps.len() + 1));
+    buf.push_str(&hash_file(file)?);
+    buf.push('\n');
+    for (module, hash) in &deps {
+        buf.push_str(module);
+        buf.push('\0');
+        buf.push_str(hash);
+        buf.push('\n');
+    }
+    Ok(sha256_hex(buf.as_bytes()))
 }

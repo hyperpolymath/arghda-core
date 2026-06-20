@@ -264,6 +264,20 @@ mod tests {
     }
 
     #[test]
+    fn transitive_imports_terminates_on_a_cycle() {
+        // A <-> B mutual import is illegal in Agda, but a half-written file
+        // under active edit in `working/` can transiently produce one. The
+        // `reachable` visited-set must stop the walk from looping forever.
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        std::fs::write(r.join("A.agda"), "module A where\nopen import B\n").unwrap();
+        std::fs::write(r.join("B.agda"), "module B where\nopen import A\n").unwrap();
+        let reach = transitive_imports(&r.join("A.agda"), r).unwrap();
+        assert!(reach.contains("A"));
+        assert!(reach.contains("B"));
+    }
+
+    #[test]
     fn discover_and_reach_over_multiple_roots() {
         let tmp = tempfile::tempdir().unwrap();
         let r = tmp.path();
