@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= arghda-core: explain me
+
+This file is a pointer, not a second README — it routes you to the one source
+of truth for each concern.
+
+* *Humans* start at link:README.adoc[`README.adoc`]: what arghda-core is, the
+  lint rules, the command surface, build and usage.
+* *Live status of record* is
+  link:.machine_readable/6a2/STATE.a2ml[`.machine_readable/6a2/STATE.a2ml`] —
+  phase, milestones, next actions. The README does not duplicate it.
+* *AI agents* start at link:0-AI-MANIFEST.a2ml[`0-AI-MANIFEST.a2ml`], then read
+  the six A2ML files under
+  link:.machine_readable/6a2/[`.machine_readable/6a2/`] (`STATE`, `META`,
+  `ECOSYSTEM`, `AGENTIC`, `NEUROSYM`, `PLAYBOOK`).
+* *Design* lives in link:docs/arghda-spec.adoc[`docs/arghda-spec.adoc`] (the v0
+  contract) and link:docs/arghda-vision.adoc[`docs/arghda-vision.adoc`] (the
+  wider arghda picture).
+
+Human prose in `README.adoc`; machine state in `.machine_readable/6a2/`. No
+duplicated status snapshots.

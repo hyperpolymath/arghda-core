@@ -7,6 +7,18 @@ All notable changes to arghda-core are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Standards / RSR alignment and root cleanup: `README.md` → `README.adoc`
+  (adoc-first; refreshed to the feature-complete v0.1 status), no duplicate
+  doc formats. Added `EXPLAINME.adoc` (orientation pointer), `LICENSE` (full
+  MPL-2.0 text), and `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1). Prose
+  docs carry `CC-BY-SA-4.0`; code/config/state stay `MPL-2.0` (per the estate
+  licence policy). Refreshed `.machine_readable/6a2/STATE.a2ml` + `META.a2ml`
+  and the `0-AI-MANIFEST.a2ml` read-order; removed local `dist-newstyle/`
+  build cruft. (Per-file SPDX headers on `src/*.rs` remain owner-manual by
+  policy — never an agent bulk sweep.)
+
 ### Added
 
 - `dag` command emitting the dependency-DAG JSON contract (nodes with

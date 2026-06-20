@@ -6,7 +6,7 @@
 
 [metadata]
 version = "0.1.0"
-last-updated = "2026-06-18"
+last-updated = "2026-06-20"
 
 [project-info]
 type = "library"  # library | binary | monorepo | service | website
@@ -20,6 +20,9 @@ author = "Jonathan D.A. Jewell (hyperpolymath)"
 # - { id = "ADR-002", title = "Triage transitions are file moves; ground truth is the filesystem", status = "accepted", date = "2026-05-30" }
 # - { id = "ADR-003", title = "Dependency-free RFC 3339 timestamps (hermetic build, no chrono)", status = "accepted", date = "2026-06-18" }
 # - { id = "ADR-004", title = "Orphan reachability is the union of discovered CI roots (All.agda/Smoke.agda)", status = "accepted", date = "2026-06-18" }
+# - { id = "ADR-005", title = "unused-import is an agda.rs-style external shell-out (per-file, local mode, LC_ALL=C.UTF-8), not a per-file LintRule", status = "accepted", date = "2026-06-20" }
+# - { id = "ADR-006", title = "Headline pattern is operator-configurable; precedence default < .arghda/config.toml < CLI flag (on the rule instance, not LintContext)", status = "accepted", date = "2026-06-20" }
+# - { id = "ADR-007", title = "DAG node `headlines` reuses the unpinned-headline extractor with the configured pattern", status = "accepted", date = "2026-06-20" }
 
 [development-practices]
 build-tool = "just"

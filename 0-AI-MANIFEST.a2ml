@@ -5,7 +5,7 @@
 
 [metadata]
 version = "0.1.0"
-last-updated = "2026-06-18"
+last-updated = "2026-06-20"
 
 [project]
 name = "arghda-core"
@@ -13,9 +13,10 @@ purpose = "Language-agnostic proof-workspace engine for the arghda visual proof-
 
 [entry]
 read-order = [
+  "EXPLAINME.adoc",
   ".machine_readable/6a2/STATE.a2ml",
   ".machine_readable/6a2/META.a2ml",
-  "README.md",
+  "README.adoc",
   "docs/arghda-spec.adoc",
   "docs/arghda-vision.adoc",
 ]
