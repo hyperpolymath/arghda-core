@@ -1,5 +1,6 @@
 //! `dag` document construction over the fixtures.
 
+use arghda_core::lint::unpinned_headline::DEFAULT_HEADLINE_PATTERN;
 use arghda_core::{build_dag, default_rules};
 use std::path::PathBuf;
 
@@ -15,7 +16,7 @@ fn fixture(name: &str) -> PathBuf {
 fn dag_over_orphan_fixture_has_expected_shape() {
     let root = fixture("orphan");
     let roots = [root.join("All.agda")];
-    let doc = build_dag(&root, &roots, &default_rules()).unwrap();
+    let doc = build_dag(&root, &roots, &default_rules(), DEFAULT_HEADLINE_PATTERN).unwrap();
 
     // Nodes are deterministic and sorted by module id.
     let ids: Vec<&str> = doc.nodes.iter().map(|n| n.id.as_str()).collect();
@@ -53,7 +54,7 @@ fn dag_over_orphan_fixture_has_expected_shape() {
 fn dag_over_wellformed_fixture_is_all_clean() {
     let root = fixture("wellformed");
     let roots = [root.join("All.agda")];
-    let doc = build_dag(&root, &roots, &default_rules()).unwrap();
+    let doc = build_dag(&root, &roots, &default_rules(), DEFAULT_HEADLINE_PATTERN).unwrap();
 
     assert_eq!(doc.version, "0.1");
     assert!(
@@ -64,4 +65,23 @@ fn dag_over_wellformed_fixture_is_all_clean() {
     assert!(doc.blocked.is_empty());
     assert!(doc.edges.iter().any(|e| e.from == "All" && e.to == "Good"));
     assert!(doc.edges.iter().any(|e| e.from == "All" && e.to == "Util"));
+}
+
+#[test]
+fn dag_populates_node_headlines() {
+    let root = fixture("headlines");
+    let roots = [root.join("All.agda")];
+    let doc = build_dag(&root, &roots, &default_rules(), DEFAULT_HEADLINE_PATTERN).unwrap();
+
+    // `Thm` declares two top-level headline signatures (sorted, deduped); its
+    // indented `private` helper is not top-level and is not surfaced.
+    let thm = doc.nodes.iter().find(|n| n.id == "Thm").unwrap();
+    assert_eq!(
+        thm.headlines,
+        vec!["thm-one".to_string(), "thm-two".to_string()]
+    );
+
+    // The entry module has only imports, so no headlines.
+    let all = doc.nodes.iter().find(|n| n.id == "All").unwrap();
+    assert!(all.headlines.is_empty());
 }

@@ -39,8 +39,9 @@ record.
 - Workspace state machine — transitions are file moves, each logged to
   `.arghda/events.jsonl` (`claim`, `promote`, `reject`, `requeue`,
   `invalidate`)
-- `dag` — emits the dependency-DAG JSON (nodes + import edges + blocked
-  list) for a source tree: the contract a visual layer consumes
+- `dag` — emits the dependency-DAG JSON (nodes — each with its lint status
+  and declared `headlines` — plus import edges and a blocked list) for a
+  source tree: the contract a visual layer consumes
 - `check` — runs Agda on a file and combines the typecheck verdict with the
   lint report (degrades gracefully when `agda` is absent)
 - First-class import graph (the `graph` module, lifted out of the orphan rule)
@@ -66,11 +67,8 @@ built-in default < `config.toml` < CLI flag. Current schema:
 headline_pattern = "^[a-z][A-Za-z0-9-]*$"
 ```
 
-Not yet: the DAG `headlines` field (the extractor now exists for
-`unpinned-headline`, but the per-node `headlines` array in the DAG schema is
-still unpopulated); the Groove service manifest. (`missing-without-k` is
-subsumed by `missing-safe-pragma`, which already reports a missing
-`--without-K`.)
+Not yet: the Groove service manifest. (`missing-without-k` is subsumed by
+`missing-safe-pragma`, which already reports a missing `--without-K`.)
 
 ## Build
 

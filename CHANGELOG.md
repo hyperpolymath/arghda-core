@@ -42,6 +42,10 @@ All notable changes to arghda-core are documented here. The format follows
   `<PATH>/.arghda/config.toml` (or an explicit `--config <file>`). Precedence
   is built-in default < `config.toml` < CLI `--headline-pattern`. Missing file
   ⇒ defaults; unknown keys are rejected so typos surface.
+- DAG `headlines` field: each `dag` node now carries the sorted, deduped list
+  of top-level headline theorem names it declares (the spec's per-node
+  `headlines` array), extracted with the same logic as `unpinned-headline` and
+  honouring the configured headline pattern. Completes the v0 DAG schema.
 - RSR scaffolding: `.machine_readable/6a2/` artefacts, `0-AI-MANIFEST.a2ml`,
   `Justfile`, `.well-known/`, and community-health files.
 - Content-hash invalidation of `proven`: promotion records a SHA-256 of the
