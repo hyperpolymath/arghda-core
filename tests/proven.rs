@@ -64,6 +64,48 @@ fn invalidate_returns_to_inbox_and_drops_the_hash() {
 }
 
 #[test]
+fn editing_a_transitive_import_makes_a_proven_file_stale() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = Workspace::init(tmp.path()).unwrap();
+
+    // A source tree (separate from the triage dirs) holding the dependency.
+    let src = tmp.path().join("src");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("Dep.agda"), "module Dep where\nx = Set\n").unwrap();
+
+    // Point the workspace at that source tree for closure hashing.
+    fs::write(
+        tmp.path().join(".arghda").join("config.toml"),
+        format!("[proven]\ninclude_root = \"{}\"\n", src.display()),
+    )
+    .unwrap();
+
+    // A file that depends on Dep, promoted to proven.
+    fs::write(
+        ws.state_dir(State::Working).join("Main.agda"),
+        "module Main where\nopen import Dep\n",
+    )
+    .unwrap();
+    ws.transition("Main.agda", State::Working, State::Proven, None)
+        .unwrap();
+
+    // Promotion recorded a closure hash, and nothing is stale yet.
+    let manifest = proven::load(tmp.path()).unwrap();
+    assert!(manifest.entries["Main.agda"].closure_sha256.is_some());
+    assert!(ws.stale_proven().unwrap().is_empty());
+
+    // Edit the DEPENDENCY, not the proven file itself -> stale via closure.
+    fs::write(src.join("Dep.agda"), "module Dep where\nx = Set\ny = Set\n").unwrap();
+    let stale = ws.stale_proven().unwrap();
+    assert_eq!(stale.len(), 1);
+    assert_eq!(stale[0].file, "Main.agda");
+    assert_eq!(
+        stale[0].reason,
+        "a transitive import changed since promotion"
+    );
+}
+
+#[test]
 fn proven_file_without_a_record_is_stale() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = Workspace::init(tmp.path()).unwrap();

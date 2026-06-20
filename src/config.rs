@@ -21,7 +21,7 @@
 use crate::lint::RuleConfig;
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Conventional config location, relative to a source tree or workspace root.
 pub const CONFIG_REL_PATH: &str = ".arghda/config.toml";
@@ -33,6 +33,8 @@ pub const CONFIG_REL_PATH: &str = ".arghda/config.toml";
 struct ConfigFile {
     #[serde(default)]
     lint: LintTable,
+    #[serde(default)]
+    proven: ProvenTable,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -40,6 +42,13 @@ struct ConfigFile {
 struct LintTable {
     /// Override for the `unpinned-headline` detection regex.
     headline_pattern: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProvenTable {
+    /// Source-tree include root for transitive `proven` closure hashing.
+    include_root: Option<String>,
 }
 
 /// Parse config TOML text into a [`RuleConfig`], overlaying built-in defaults.
@@ -67,6 +76,29 @@ pub fn load_from_dir(base: &Path) -> Result<RuleConfig> {
     } else {
         Ok(RuleConfig::default())
     }
+}
+
+/// The `[proven] include_root` (if any) from `<base>/.arghda/config.toml`,
+/// resolved relative to `base` when given as a relative path. This is the
+/// source tree against which a promoted file's transitive-import closure is
+/// hashed for staleness; `None` means own-bytes hashing only.
+pub fn proven_include_root(base: &Path) -> Result<Option<PathBuf>> {
+    let candidate = base.join(CONFIG_REL_PATH);
+    if !candidate.is_file() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&candidate)
+        .with_context(|| format!("reading config {}", candidate.display()))?;
+    let file: ConfigFile =
+        toml::from_str(&text).with_context(|| format!("parsing config {}", candidate.display()))?;
+    Ok(file.proven.include_root.map(|p| {
+        let p = PathBuf::from(p);
+        if p.is_absolute() {
+            p
+        } else {
+            base.join(p)
+        }
+    }))
 }
 
 #[cfg(test)]
@@ -121,5 +153,43 @@ mod tests {
         .unwrap();
         let cfg = load_from_dir(dir.path()).unwrap();
         assert_eq!(cfg.headline_pattern, "^[A-Z].*$");
+    }
+
+    #[test]
+    fn proven_include_root_absent_is_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(proven_include_root(dir.path()).unwrap().is_none());
+        // A [lint]-only config also yields no include root.
+        std::fs::create_dir_all(dir.path().join(".arghda")).unwrap();
+        std::fs::write(dir.path().join(CONFIG_REL_PATH), "[lint]\n").unwrap();
+        assert!(proven_include_root(dir.path()).unwrap().is_none());
+    }
+
+    #[test]
+    fn proven_include_root_resolves_absolute_and_relative() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".arghda")).unwrap();
+
+        // Relative is resolved against the workspace base.
+        std::fs::write(
+            dir.path().join(CONFIG_REL_PATH),
+            "[proven]\ninclude_root = \"src\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            proven_include_root(dir.path()).unwrap(),
+            Some(dir.path().join("src"))
+        );
+
+        // Absolute is taken as-is.
+        std::fs::write(
+            dir.path().join(CONFIG_REL_PATH),
+            "[proven]\ninclude_root = \"/abs/tree\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            proven_include_root(dir.path()).unwrap(),
+            Some(std::path::PathBuf::from("/abs/tree"))
+        );
     }
 }
