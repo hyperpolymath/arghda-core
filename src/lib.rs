@@ -4,6 +4,7 @@
 //! and the diagnostic types. The CLI in `main.rs` is a thin consumer.
 
 pub mod agda;
+pub mod config;
 pub mod dag;
 pub mod diagnostic;
 pub mod event;
