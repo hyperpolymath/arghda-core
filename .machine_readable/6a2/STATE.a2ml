@@ -40,7 +40,7 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "Formalise template-applicability rules (capability-gated RSR profile: carry a template module iff the repo declares the capability it serves) — estate-wide, candidate for hyperpolymath/standards",
+  "Template-applicability: rsr-profile.a2ml declares preset rust-cli (landed); estate policy + gate model + reference checker filed in hyperpolymath/standards#391. Follow-up: wire scripts/check-rsr-profile.sh into CI once standards#391 lands.",
   "Extend content-hash invalidation to cover transitive imports (needs include-root tracking)",
   "Serve /.well-known/groove for PanLL discovery (Groove protocol)",
   "Scaffold arghda-studio (AffineScript visual layer consuming the dag JSON)",

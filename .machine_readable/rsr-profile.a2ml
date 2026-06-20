@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# rsr-profile.a2ml — RSR template-applicability profile for arghda-core.
+#
+# Declares which template capabilities this repo has, so its scaffold can be
+# checked against the gate model instead of a fixed "one shape fits all".
+# Policy:  hyperpolymath/standards TEMPLATE-APPLICABILITY-POLICY.adoc
+# Data:    hyperpolymath/standards .machine_readable/template-capability-gates.toml
+# Checker: hyperpolymath/standards scripts/check-rsr-profile.sh
+
+[profile]
+preset = "rust-cli"
+add = []      # extra capabilities beyond the preset
+remove = []   # preset capabilities this repo does NOT have
+
+[rationale]
+# Why arghda-core declines the maximal template's gated modules:
+no-abi = "language-agnostic engine; no C-ABI/FFI seam, no Idris2 ABI proofs (no abi.ipkg / src/interface/)"
+no-formal-proofs = "consumes Agda — shells out to agda / agda-unused — but contains no in-tree proofs (no verification/proofs/)"
+no-container = "ships a CLI binary, not a container image"
+no-reproducible-build = "cargo build only for now; guix.scm / flake.nix are a future addition, not present"
+no-affinescript = "pure Rust; the planned AffineScript visual layer is a separate repo (arghda-studio)"
+no-governance-tier = "leaf tool; declines the full AUDIT / AFFIRMATION / GOVERNANCE / MAINTAINERS trio"
