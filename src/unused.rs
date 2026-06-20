@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! Shelling out to `agda-unused` to find unused code (the `unused-import` rule).
 //!
 //! Like [`crate::agda`], ArghDA does not analyse for unused code itself — it

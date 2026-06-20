@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! `unpinned-headline` (warn) — a module declares a top-level theorem whose
 //! name matches the headline pattern, but the name is not pinned in any
 //! `Smoke.agda` via a `using ( … )` clause.

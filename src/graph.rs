@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! First-class Agda import graph.
 //!
 //! The reachability primitives (`module_name_of`, `module_to_path`,

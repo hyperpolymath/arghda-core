@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 use crate::event::{self, Event, EventKind};
 use crate::proven::{self, ProvenRecord};
 use anyhow::{Context, Result};

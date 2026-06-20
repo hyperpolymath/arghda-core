@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! End-to-end smoke tests for the v0.1 lint pack.
 //!
 //! Each test runs the default rule pack against a self-contained

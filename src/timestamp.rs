@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! Dependency-free UTC timestamps.
 //!
 //! Emits RFC 3339 / ISO-8601 strings (e.g. `2026-06-18T11:45:32Z`) without

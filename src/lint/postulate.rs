@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! `unjustified-postulate` — flag `postulate` openers that lack an
 //! adjacent `-- JUSTIFY:` rationale.
 //!

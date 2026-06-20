@@ -6,13 +6,13 @@
 [metadata]
 project = "arghda-core"
 version = "0.1.0"
-last-updated = "2026-06-18"
+last-updated = "2026-06-20"
 status = "active"  # active | paused | archived
 
 [project-context]
 name = "arghda-core"
 purpose = "Lightweight proof-workspace manager for Agda — the language-agnostic engine half of arghda. A four-state triage workspace (inbox/working/proven/rejected) as file moves, a lint pack targeting the silent-failure class, a first-class import-graph DAG, and a JSON + event-stream contract a visual layer (arghda-studio) consumes. It never proves anything; Agda does."
-completion-percentage = 55
+completion-percentage = 85
 
 [position]
 phase = "implementation"   # design | implementation | testing | maintenance | archived
@@ -21,37 +21,44 @@ maturity = "alpha"         # experimental | alpha | beta | production | lts
 [route-to-mvp]
 milestones = [
   { name = "Workspace scaffold + filesystem watcher", completion = 100 },
-  { name = "Lint pack (missing-safe-pragma, orphan-module, unjustified-postulate, escape-hatch, tab-mix)", completion = 100 },
-  { name = "First-class import graph + `dag` JSON command", completion = 100 },
+  { name = "Hard-block lint pack (missing-safe-pragma, orphan-module, unjustified-postulate)", completion = 100 },
+  { name = "Warn lint pack (escape-hatch, tab-mix, unpinned-headline, unused-import)", completion = 100 },
+  { name = "First-class import graph + `dag` JSON command (nodes incl. headlines, edges, blocked)", completion = 100 },
   { name = "State machine (claim/promote/reject/requeue/invalidate) + events.jsonl", completion = 100 },
   { name = "`check` command (Agda typecheck + lint verdict)", completion = 100 },
   { name = "Multi-root reachability (union of discovered CI roots)", completion = 100 },
-  { name = "Content-hash invalidation of proven (file-level; +imports deferred)", completion = 75 },
-  { name = "Remaining lint rules (unpinned-headline, unused-import)", completion = 0 },
-  { name = "Groove service manifest (/.well-known/groove)", completion = 0 },
-  { name = "RSR retrofit (.machine_readable, Justfile, .well-known)", completion = 60 },
+  { name = "Content-hash invalidation of proven (file-level; transitive imports deferred)", completion = 75 },
+  { name = "Operator config (.arghda/config.toml + --headline-pattern + --config)", completion = 100 },
+  { name = "RSR / standards alignment (.machine_readable, README.adoc, EXPLAINME, LICENSE, .well-known)", completion = 100 },
+  { name = "Groove service manifest (/.well-known/groove) for PanLL discovery", completion = 0 },
 ]
 
 [blockers-and-issues]
-# No active blockers. `unpinned-headline` needs Smoke.agda parsing + a
-# configurable headline regex; `unused-import` shells out to `agda-unused`.
+# No active blockers. v0.1 lint set + DAG schema (arghda-spec.adoc) are
+# complete. The SPDX licence invariant is applied and enforced
+# (scripts/check-spdx.sh; .machine_readable/licensing-policy.toml).
 
 [critical-next-actions]
 actions = [
-  "Add unpinned-headline (needs config + headline regex) + unused-import (agda-unused) lint rules",
-  "Extend content-hash to cover transitive imports (needs include-root tracking)",
-  "Serve /.well-known/groove for PanLL discovery",
+  "Formalise template-applicability rules (capability-gated RSR profile: carry a template module iff the repo declares the capability it serves) — estate-wide, candidate for hyperpolymath/standards",
+  "Extend content-hash invalidation to cover transitive imports (needs include-root tracking)",
+  "Serve /.well-known/groove for PanLL discovery (Groove protocol)",
   "Scaffold arghda-studio (AffineScript visual layer consuming the dag JSON)",
 ]
 
 [maintenance-status]
-last-run-utc = "never"
-last-result = "unknown"  # unknown | pass | warn | fail
+last-run-utc = "2026-06-20"
+last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
+# `just check` (fmt-check + clippy -D warnings + build + test) green; ~50 lib
+# tests + integration suites pass. Dogfooded against echo-types + a live
+# agda-unused build.
 
 [ecosystem]
 part-of = ["arghda"]
 depends-on = []
+# Build deps: anyhow, clap, notify, regex, serde, serde_json, toml, walkdir.
+# Optional external tools: agda, agda-unused (both degrade gracefully).
 # Downstream consumers: arghda-studio (planned), arghda-panll (planned).
 # Dogfood workspaces: echo-types, absolute-zero.

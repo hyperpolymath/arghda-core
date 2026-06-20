@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! The `proven`-state content-hash manifest (`.arghda/hashes.json`).
 //!
 //! When a file is promoted to `proven`, its content hash is recorded here.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+
 //! Dependency-free SHA-256 (FIPS 180-4).
 //!
 //! Used for `proven`-state content hashing — detecting when a file changes

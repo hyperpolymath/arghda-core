@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: MPL-2.0 -->
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
 # Changelog
 
 All notable changes to arghda-core are documented here. The format follows
@@ -6,6 +6,25 @@ All notable changes to arghda-core are documented here. The format follows
 [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+### Changed
+
+- Standards / RSR alignment and root cleanup: `README.md` → `README.adoc`
+  (adoc-first; refreshed to the feature-complete v0.1 status), no duplicate
+  doc formats. Added `EXPLAINME.adoc` (orientation pointer), `LICENSE` (full
+  MPL-2.0 text), and `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1). Prose
+  docs carry `CC-BY-SA-4.0`; code/config/state stay `MPL-2.0` (per the estate
+  licence policy). Refreshed `.machine_readable/6a2/STATE.a2ml` + `META.a2ml`
+  and the `0-AI-MANIFEST.a2ml` read-order; removed local `dist-newstyle/`
+  build cruft.
+- Formal SPDX licence invariant (owner-directed): every tracked file carries
+  the correct header — `MPL-2.0` for code/config/scripts/state, `CC-BY-SA-4.0`
+  for prose — applied per file (incl. all `src/*.rs`) and enforced by
+  `scripts/check-spdx.sh`, wired into `just check` and Rust CI. Third-party,
+  generated (`Cargo.lock`), and test-data (`tests/fixtures/`) files are
+  explicitly excluded and never relicensed; `docs/*.adoc` normalised from
+  `CC-BY-4.0` to `CC-BY-SA-4.0`. Declared in
+  `.machine_readable/licensing-policy.toml`.
 
 ### Added
 
