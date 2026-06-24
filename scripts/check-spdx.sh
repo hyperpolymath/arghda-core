@@ -5,7 +5,7 @@
 # Licence invariant for arghda-core (enforced by `just check` + Rust CI).
 #
 #   code / config / scripts / state   ->  SPDX-License-Identifier: MPL-2.0
-#   prose documentation (*.adoc, *.md) ->  SPDX-License-Identifier: CC-BY-SA-4.0
+#   prose documentation (*.adoc, *.md) ->  SPDX-License-Identifier: MPL-2.0
 #
 # Files that are NOT ours, generated, or test-input data are EXCLUDED and must
 # never carry the repo's licence choices. The machine-readable declaration of
@@ -20,7 +20,7 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 MPL='SPDX-License-Identifier: MPL-2.0'
-CC='SPDX-License-Identifier: CC-BY-SA-4.0'
+CC='SPDX-License-Identifier: MPL-2.0'
 fail=0
 
 # Not ours / generated / test-input data — see [excluded] in the policy file.
