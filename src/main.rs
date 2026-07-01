@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
     build_dag, build_reason, event, groove_manifest, run_lints, unused, watcher, Agda, AgdaCubical,
-    Backend, BackendKind, Idris2, Lean, LintRule, Probe, RuleConfig, Smt, State, Verdict,
+    Backend, BackendKind, Dispatch, Idris2, Lean, LintRule, Probe, RuleConfig, Smt, State, Verdict,
     Workspace,
 };
 use clap::{Parser, Subcommand};
@@ -90,6 +90,10 @@ enum Cmd {
         /// `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
+        /// Where the check runs: `local` (default) or `echidna[=<url>]`
+        /// (route to the Echidna orchestrator).
+        #[arg(long, default_value = "local")]
+        dispatch: String,
         /// Emit the report as JSON.
         #[arg(long)]
         json: bool,
@@ -143,6 +147,10 @@ enum Cmd {
         /// default, in which case clean nodes are `unknown`.
         #[arg(long)]
         check: bool,
+        /// With `--check`, where each check runs: `local` (default) or
+        /// `echidna[=<url>]`.
+        #[arg(long, default_value = "local")]
+        dispatch: String,
     },
     /// Claim a file: inbox -> working.
     Claim { workspace: PathBuf, file: String },
@@ -210,8 +218,9 @@ fn main() -> Result<()> {
             file,
             include_root,
             backend,
+            dispatch,
             json,
-        } => check(&file, include_root.as_deref(), &backend, json)?,
+        } => check(&file, include_root.as_deref(), &backend, &dispatch, json)?,
         Cmd::Dag {
             path,
             entry,
@@ -232,6 +241,7 @@ fn main() -> Result<()> {
             config,
             backend,
             check,
+            dispatch,
         } => reason(
             &path,
             &entry,
@@ -239,6 +249,7 @@ fn main() -> Result<()> {
             config.as_deref(),
             &backend,
             check,
+            &dispatch,
         )?,
         Cmd::Claim { workspace, file } => {
             transition(&workspace, &file, State::Inbox, State::Working)?
@@ -419,7 +430,13 @@ fn scan(
     Ok(())
 }
 
-fn check(file: &Path, include_root: Option<&Path>, backend_name: &str, json: bool) -> Result<()> {
+fn check(
+    file: &Path,
+    include_root: Option<&Path>,
+    backend_name: &str,
+    dispatch: &str,
+    json: bool,
+) -> Result<()> {
     if !file.is_file() {
         anyhow::bail!("file not found: {}", file.display());
     }
@@ -443,7 +460,7 @@ fn check(file: &Path, include_root: Option<&Path>, backend_name: &str, json: boo
     };
     let report =
         run_lints(file, &ctx, &rules).with_context(|| format!("linting {}", file.display()))?;
-    let outcome = backend.check_file(file, include_root)?;
+    let outcome = Dispatch::parse(dispatch)?.run(backend.as_ref(), file, include_root)?;
 
     // Honest verdict: a lint hard-block rejects; otherwise report the
     // backend's ACTUAL verdict word. Only `Proven` (with no hard block) is
@@ -532,6 +549,7 @@ fn reason(
     config: Option<&Path>,
     backend_name: &str,
     do_check: bool,
+    dispatch: &str,
 ) -> Result<()> {
     let backend = backend_for(backend_name)?;
     let (roots, rules, cfg) = resolve_roots_and_rules(
@@ -556,9 +574,10 @@ fn reason(
     let mut verdicts = std::collections::BTreeMap::new();
     let stale = std::collections::BTreeSet::new();
     if do_check {
+        let route = Dispatch::parse(dispatch)?;
         for node in &dag_doc.nodes {
             let file = include_root.join(&node.file);
-            let outcome = backend.check_file(&file, include_root)?;
+            let outcome = route.run(backend.as_ref(), &file, include_root)?;
             if outcome.available {
                 verdicts.insert(node.id.clone(), outcome.verdict);
             }

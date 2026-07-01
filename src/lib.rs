@@ -13,6 +13,7 @@
 pub mod config;
 pub mod dag;
 pub mod diagnostic;
+pub mod dispatch;
 pub mod event;
 pub mod graph;
 pub mod groove;
@@ -28,6 +29,7 @@ pub mod workspace;
 
 pub use dag::{build as build_dag, DagDocument};
 pub use diagnostic::{Diagnostic, LintReport, Severity};
+pub use dispatch::Dispatch;
 pub use event::{Event, EventKind};
 pub use graph::{build as build_graph, ImportGraph};
 pub use groove::{manifest as groove_manifest, GrooveManifest};
