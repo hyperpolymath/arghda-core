@@ -44,7 +44,7 @@ milestones = [
   { name = "M1: Backend trait (Assistant|Solver kinds; Outcome/Verdict); agda.rs -> prover/agda.rs; graph/dag take &dyn Backend (pure refactor, 50 tests stay green)", completion = 100 },
   { name = "M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island)", completion = 100 },
   { name = "M3: Flying-Logic reasoning graph (src/reason: And|Or juncts, demote-only cycle-safe Verdict propagation, additive studio JSON)", completion = 100 },
-  { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 95 },
+  { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 100 },
   { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 100 },
   { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 100 },
   { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 70 },
@@ -113,6 +113,22 @@ milestones = [
 # +2 unit ipkg-parser incl. sourcedir + no-resolvable-main). Dogfooded: `reason
 # --backend idris2` over an ipkg fixture → crt_roots ['App'], App+Helper wired.
 # M4 now 95% (remaining: totality-hole `?name` + per-def `partial` lint).
+#
+# M4 FOLLOW-ON landed 2026-07-01 (M4 → 100%): the Idris2 escape-hatch lint now
+# also flags a per-definition `partial` modifier (totality opt-out, distinct
+# from the already-handled file-wide `%default partial` directive) and totality
+# holes `?name` (incomplete terms/proofs). src/lint/idris2.rs: `holes()` finds a
+# `?` that begins a token (start / after ws / ([{,;= ) and is followed by an
+# identifier — so a hole `?goal` matches but a user operator `<?>` does not;
+# `strip_strings()` blanks double-quoted literals (honouring \" ) first so a
+# `"?x"` in a string is not a false hole. All under the shared `escape-hatch`
+# rule name → the reason graph caps hits at amber. 173 tests (+5 idris2 lint
+# unit: per-def partial, hole, hole-in-string ignored, `<?>` not a hole, `total`
+# not flagged). DOGFOODED vs real idris2 0.7.0: a file with `partial loop` +
+# `f = ?rhs` — `idris2 --check --source-dir` exits 0 (the silent-failure class);
+# `arghda scan --backend idris2` flags both (partial + ?rhs); `reason --check
+# --backend idris2` → Holey self=admitted, effective=admitted, evidence
+# "prover: proven; escape-hatch → admitted" (green exit correctly capped amber).
 #
 # M6 FOLLOW-ON landed 2026-07-01 (M6 → 100%): lake-env import resolution — the
 # Lean audit now reaches IMPORTED files, not just import-free ones. When a
@@ -392,12 +408,12 @@ actions = [
   "ENGINE-SPINE DELIVERABLE COMPLETE: M0-M7 + M11 all landed. v0.1 spec closed. Six backends (agda, agda-cubical, idris2, lean4 Assistant; z3, cvc5 Solver) + reasoning graph + doctor + groove + dispatch seam. Remaining work is refinement + the heavy tail:",
   "M7 follow-on: the real Echidna orchestrator HTTP client (feature-gated), once Echidna's API is confirmed — only Dispatch::run changes.",
   "M6 follow-on: DONE (M6 → 100%) — lake-env resolution (`lake env lean` under a lakefile) so IMPORTED Lean files elaborate + get #print-axioms-audited too, not just import-free ones. Dogfooded on a built lake project.",
-  "M4 follow-on: .ipkg-declared roots DONE; remaining = totality-hole (?name) + per-def `partial` lint.",
+  "M4 follow-on: DONE (M4 → 100%) — totality-hole (?name) + per-def `partial` lint added to the Idris2 escape-hatch rule; dogfooded vs real idris2 0.7.0 (green --check exit correctly capped to amber).",
   "M3 follow-on: DONE — `reason --workspace <ws>` sources real verdicts from a `proven/` state (workspace_verdicts) + demotes stale-proven via the content-hash closure. Refinement follow-ons bucket now complete.",
   "M8 (Coq/Rocq): DONE (90%) — coqc 8.18.0 provisioned + adapter built + dogfooded (proven/admitted/postulated/error) with Section-aware postulate classifier. Remaining: _CoqProject logical paths + dependency-ordered compilation.",
   "M9 (Isabelle): DONE (90%) — Isabelle2025 provisioned + adapter built + dogfooded (proven/admitted/postulated/error) via session-build; ROOT-based roots, imports-clause edges. Remaining: session-qualified imports + dependency-ordered multi-session builds.",
   "M10 (Mizar): DONE (85%) — turned out to be a REAL verify, not detect-only: static i386 verifier runs on x86_64; provisioned + adapter (accom+verifier+.err) + dogfooded (proven/error). HEAVY TAIL M8-M10 COMPLETE. Remaining: local-article prel export.",
-  "Next, climb up: M4 (totality-hole ?name + per-def partial lint for Idris2), M7 (real Echidna HTTP client, feature-gated — but FIRST confirm Echidna's API actually exists; if not, keep the honest stub). Each its own focused draft PR, gate green, real-tool dogfood where installed.",
+  "Only M7 remains: the real Echidna HTTP client (feature-gated) — but FIRST confirm Echidna's API actually exists (search estate/GitHub for an echidna repo with a documented HTTP API); if it does not, keep the honest Unavailable stub and say so plainly rather than invent a contract. After M7 the roadmap's tractable items are exhausted.",
 ]
 
 [maintenance-status]
@@ -406,9 +422,10 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M6-followon: 125 lib + 43 integration = 168 tests pass. M6 lake-env
-# import resolution dogfooded vs real Lean 4.13.0 + Lake 5.0.0 (imported file in
-# a built lake project → proven; outside → error). codeql.yml added
+# post-M4-followon: 130 lib + 43 integration = 173 tests pass. M4 totality-hole
+# + partial lint dogfooded vs real idris2 0.7.0 (green --check capped to amber).
+# M6 lake-env import resolution dogfooded vs real Lean 4.13.0 + Lake 5.0.0
+# (imported file in a built lake project → proven; outside → error). codeql.yml added
 # (code-scanning gate fix). M10 Mizar adapter dogfooded vs real Mizar 8.1.15
 # (proven/error via accom+verifier+.err; MIZFILES=/opt/mizar; doctor [OK]
 # mizar). M9 Isabelle dogfooded vs Isabelle2025; M8 Coq dogfooded vs coqc

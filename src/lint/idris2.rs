@@ -9,11 +9,12 @@
 //! in Idris2 and a `believe_me` in Agda get the same honest treatment.
 //!
 //! Flags the Idris2 trust/escape primitives `believe_me`, `assert_total`,
-//! `assert_smaller`, `idris_crash`, and the `%default partial` directive.
-//! Idris2 `--check` exits 0 even when these are present, so without this rule
-//! they would silently ride along in an otherwise-green verdict — exactly the
-//! silent-failure class arghda exists to surface. Totality holes (`?name`)
-//! and per-def `partial` modifiers are a documented follow-on.
+//! `assert_smaller`, `idris_crash`, the `%default partial` directive, a
+//! per-definition `partial` modifier (opts that definition out of totality
+//! checking), and totality holes `?name` (incomplete terms/proofs). Idris2
+//! `--check` exits 0 even when these are present, so without this rule they
+//! would silently ride along in an otherwise-green verdict — exactly the
+//! silent-failure class arghda exists to surface.
 
 use super::{LintContext, LintRule};
 use crate::diagnostic::{Diagnostic, LintReport, Severity};
@@ -45,7 +46,10 @@ impl LintRule for Idris2EscapeHatch {
             if trimmed.starts_with("--") {
                 continue; // whole-line comment
             }
-            // The `%default partial` directive turns off totality checking.
+            // Everything below ignores a trailing line comment.
+            let code = line.split(" --").next().unwrap_or(line);
+            // The `%default partial` directive turns off totality checking
+            // file-wide.
             if trimmed.starts_with("%default") && trimmed.contains("partial") {
                 report.push(warn(
                     self.name(),
@@ -53,9 +57,18 @@ impl LintRule for Idris2EscapeHatch {
                     i + 1,
                     "totality escape directive `%default partial`".to_string(),
                 ));
+            } else if has_token(code, "partial") {
+                // A per-definition `partial` modifier opts that definition out
+                // of totality checking (distinct from the file-wide directive
+                // above, which is already reported).
+                report.push(warn(
+                    self.name(),
+                    file,
+                    i + 1,
+                    "totality opt-out `partial` modifier".to_string(),
+                ));
             }
-            // Trust/escape primitives, ignoring any trailing line comment.
-            let code = line.split(" --").next().unwrap_or(line);
+            // Trust/escape primitives.
             for tok in ESCAPE_TOKENS {
                 if has_token(code, tok) {
                     report.push(warn(
@@ -66,9 +79,78 @@ impl LintRule for Idris2EscapeHatch {
                     ));
                 }
             }
+            // Totality holes `?name` — incomplete terms/proofs that `--check`
+            // defers rather than rejects. String literals are blanked first so
+            // a `"?x"` inside a string does not match.
+            for hole in holes(&strip_strings(code)) {
+                report.push(warn(
+                    self.name(),
+                    file,
+                    i + 1,
+                    format!("totality hole `?{hole}`"),
+                ));
+            }
         }
         Ok(())
     }
+}
+
+/// Blank out double-quoted string literals (content → spaces), honouring `\"`
+/// escapes, so a `?name` inside a string is not mistaken for a hole.
+fn strip_strings(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut in_str = false;
+    let mut escaped = false;
+    for c in line.chars() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            out.push(' ');
+        } else if c == '"' {
+            in_str = true;
+            out.push(' ');
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// The hole names in `code`: a `?` that begins a token (start of line or after
+/// whitespace / an opening bracket / a separator / `=`) and is followed by an
+/// identifier. This distinguishes a hole `?goal` from a user operator like
+/// `<?>` (where `?` is surrounded by symbol chars).
+fn holes(code: &str) -> Vec<String> {
+    let b = code.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'?' {
+            let prev_ok = i == 0
+                || matches!(
+                    b[i - 1],
+                    b' ' | b'\t' | b'(' | b'[' | b'{' | b',' | b';' | b'='
+                );
+            let next_ok = i + 1 < b.len() && (b[i + 1].is_ascii_alphabetic() || b[i + 1] == b'_');
+            if prev_ok && next_ok {
+                let mut j = i + 1;
+                while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b'\'')
+                {
+                    j += 1;
+                }
+                out.push(code[i + 1..j].to_string());
+                i = j;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
 }
 
 fn warn(rule: &str, file: &Path, line: usize, message: String) -> Diagnostic {
@@ -135,6 +217,40 @@ mod tests {
     #[test]
     fn clean_idris_file_is_silent() {
         let r = lint_str("module M\n\ngreeting : String\ngreeting = \"hi\"\n");
+        assert!(r.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn per_def_partial_modifier_is_warned() {
+        let r = lint_str("module M\n\npartial\nloop : Nat -> Nat\nloop x = loop x\n");
+        assert_eq!(r.warns().count(), 1);
+        assert!(r.diagnostics[0].message.contains("partial"));
+    }
+
+    #[test]
+    fn totality_hole_is_warned() {
+        let r = lint_str("module M\n\nf : Nat\nf = ?rhs\n");
+        assert_eq!(r.warns().count(), 1);
+        assert_eq!(r.diagnostics[0].rule, "escape-hatch");
+        assert!(r.diagnostics[0].message.contains("?rhs"));
+    }
+
+    #[test]
+    fn hole_inside_a_string_is_not_flagged() {
+        let r = lint_str("module M\n\nmsg : String\nmsg = \"what is ?this\"\n");
+        assert!(r.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn question_operator_is_not_a_hole() {
+        // A user operator like `<?>` has `?` between symbol chars — not a hole.
+        let r = lint_str("module M\n\n(<?>) : Maybe a -> a -> a\n");
+        assert!(r.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn total_modifier_is_not_flagged() {
+        let r = lint_str("module M\n\ntotal\ng : Nat -> Nat\ng x = x\n");
         assert!(r.diagnostics.is_empty());
     }
 }
