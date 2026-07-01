@@ -66,10 +66,9 @@ provision-heavy:
     bash scripts/provision-provers.sh --heavy
 
 # Report which prover/solver backends are actually runnable, no installs.
-# (Interim: shells the provision script's --verify-only table until the
-# `arghda doctor` subcommand lands.)
+# The `arghda doctor` subcommand probes each binary (`<tool> --version`).
 doctor:
-    bash scripts/provision-provers.sh --verify-only
+    cargo run --quiet -- doctor
 
 # RSR: the mandated machine-readable artefacts are present and well-formed.
 validate-rsr:

@@ -40,7 +40,7 @@ milestones = [
 # "proven" on a real exit-0 (never embed a prover). See the plan doc.
 [route-to-flying-logic]
 milestones = [
-  { name = "M0: provision-provers.sh (pinned, honest --version verification) + `just provision/doctor` recipes", completion = 80 },
+  { name = "M0: provision-provers.sh (pinned, honest --version verification) + `just provision/doctor` recipes + `arghda doctor`", completion = 100 },
   { name = "M1: Backend trait (Assistant|Solver kinds; Outcome/Verdict); agda.rs -> prover/agda.rs; graph/dag take &dyn Backend (pure refactor, 50 tests stay green)", completion = 100 },
   { name = "M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island)", completion = 100 },
   { name = "M3: Flying-Logic reasoning graph (src/reason: And|Or juncts, demote-only cycle-safe Verdict propagation, additive studio JSON)", completion = 100 },
@@ -59,6 +59,16 @@ milestones = [
 # are scripted (behind --heavy/--mizar) but not installed this session.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
+#
+# M0 COMPLETED 2026-07-01: the `arghda doctor` subcommand lands, closing the
+# last M0 gap. Probes every known backend by running `<command> --version`;
+# reports runnable/detail honestly (runnable=false only when the binary truly
+# can't execute, never a guess). `Backend::probe()` (default over a new
+# `command()` method) + `Probe` type; `command()` distinguishes binary from
+# name (agda-cubical runs `agda`). `arghda doctor [--json]` + `just doctor`
+# repointed off the interim provision-script shim. Dogfooded here: 5/5 runnable
+# (agda 2.6.3, idris2 0.7.0, z3 4.8.12, cvc5 1.2.0; agda-cubical shares agda).
+# 108 tests.
 #
 # M2 landed 2026-07-01: Cubical-Agda variant. Implemented as a SEPARATE backend
 # `AgdaCubical` (name "agda-cubical") rather than the plan's `Agda::cubical()`
@@ -152,10 +162,10 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "M1 + M2 + M3 + M4 + M5 DONE. Five backends across both interaction models: agda, agda-cubical, idris2 (Assistant); z3, cvc5 (Solver). Next:",
-  "Finish M0: add the `arghda doctor` Rust subcommand — report which of the five backends are actually runnable (probe each binary), repoint `just doctor` at it, feed the Groove manifest. Closes the last M0 gap.",
-  "Flying-Logic epic M6: Lean4 adapter (lake build + #print axioms audit → honest Unknown soundness when the audit is absent). Lean 4.13.0 provisioned.",
-  "Flying-Logic epic M11: studio JSON freeze (reason/0.1) + Groove /.well-known/groove manifest (the one open v0.1 milestone).",
+  "M0 + M1 + M2 + M3 + M4 + M5 DONE. Five backends across both interaction models (agda, agda-cubical, idris2 Assistant; z3, cvc5 Solver) + reasoning graph + doctor. Engine spine core complete. Next:",
+  "Flying-Logic epic M6: Lean4 adapter (lake build + #print axioms audit → honest Unknown soundness when the audit is absent). Lean 4.13.0 provisioned. Sixth backend.",
+  "Flying-Logic epic M11: studio JSON freeze (reason/0.1) + Groove /.well-known/groove manifest (the one open v0.1 milestone; `arghda doctor` output feeds it).",
+  "Flying-Logic epic M7: Echidna dispatch seam (feature-gated client, same Outcome).",
   "M4 follow-on: .ipkg-declared roots; totality-hole (?name) + per-def `partial` lint.",
   "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs).",
   "M8-M10 heavy tail (Coq/Rocq, Isabelle, Mizar) — gated on --heavy provisioning.",
@@ -167,9 +177,10 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M2: 79 lib + 28 integration = 107 tests pass. Dogfooded via real CLI on
-# all five backends: agda + agda-cubical + idris2 (Assistant), z3 + cvc5
-# (Solver). Dogfooded historically against echo-types + agda-unused.
+# post-M0-doctor: 80 lib + 28 integration = 108 tests pass. `arghda doctor`
+# dogfooded: 5/5 backends runnable. All five backends dogfooded via real CLI:
+# agda + agda-cubical + idris2 (Assistant), z3 + cvc5 (Solver). Dogfooded
+# historically against echo-types + agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]

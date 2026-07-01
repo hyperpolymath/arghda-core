@@ -129,6 +129,10 @@ impl Backend for Smt {
         // No source-level escape-hatch class for SMT-LIB2.
         Ok(Vec::new())
     }
+
+    fn command(&self) -> &'static str {
+        self.cmd
+    }
 }
 
 /// Map solver output + exit status to a [`Verdict`]. Parses the actual

@@ -25,6 +25,7 @@ use crate::lint::{LintRule, RuleConfig};
 use anyhow::Result;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub mod agda;
 pub mod idris2;
@@ -106,6 +107,55 @@ impl Outcome {
     }
 }
 
+/// The result of probing whether a backend's tool is actually runnable —
+/// the honest input to `arghda doctor`.
+#[derive(Clone, Debug, Serialize)]
+pub struct Probe {
+    /// The backend id (`agda`, `z3`, …).
+    pub backend: String,
+    /// Assistant or solver.
+    pub kind: BackendKind,
+    /// `true` iff the tool's binary could be executed.
+    pub runnable: bool,
+    /// The tool's version line, or why it is not runnable.
+    pub detail: String,
+}
+
+/// Probe a tool by running `<cmd> --version`. Reports `runnable` honestly:
+/// `false` only when the binary is absent / cannot be executed (never a
+/// guess). `detail` is the first output line, or the reason it failed.
+fn probe_tool(name: &str, kind: BackendKind, cmd: &str) -> Probe {
+    match Command::new(cmd).arg("--version").output() {
+        Ok(out) => {
+            let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
+            combined.push_str(&String::from_utf8_lossy(&out.stderr));
+            let first = combined.lines().next().unwrap_or("").trim().to_string();
+            Probe {
+                backend: name.to_string(),
+                kind,
+                runnable: true,
+                detail: if first.is_empty() {
+                    format!("ran `{cmd} --version`")
+                } else {
+                    first
+                },
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Probe {
+            backend: name.to_string(),
+            kind,
+            runnable: false,
+            detail: format!("`{cmd}` not found on PATH"),
+        },
+        Err(e) => Probe {
+            backend: name.to_string(),
+            kind,
+            runnable: false,
+            detail: format!("`{cmd}` could not run: {e}"),
+        },
+    }
+}
+
 /// An object-safe adapter over one external prover or solver.
 ///
 /// Exactly the seams that used to be hardcoded to Agda live behind this
@@ -153,6 +203,17 @@ pub trait Backend: Send + Sync {
 
     /// The per-language lint pack, parameterised by operator config.
     fn lint_rules(&self, cfg: &RuleConfig) -> Result<Vec<Box<dyn LintRule>>>;
+
+    /// The external binary this backend shells out to (`agda`, `z3`, …).
+    /// May differ from [`Backend::name`] — e.g. `agda-cubical` runs `agda`.
+    fn command(&self) -> &'static str;
+
+    /// Probe whether the tool is actually runnable (for `arghda doctor`).
+    /// The default runs `<command> --version`; honest — `runnable` is false
+    /// only when the binary genuinely cannot be executed.
+    fn probe(&self) -> Probe {
+        probe_tool(self.name(), self.kind(), self.command())
+    }
 }
 
 /// The default backend when none is selected: Agda, the v0.1 language.
