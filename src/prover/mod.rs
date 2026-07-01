@@ -29,10 +29,12 @@ use std::process::Command;
 
 pub mod agda;
 pub mod idris2;
+pub mod lean;
 pub mod smt;
 
 pub use agda::{Agda, AgdaCubical};
 pub use idris2::Idris2;
+pub use lean::Lean;
 pub use smt::Smt;
 
 /// The two backend interaction models.

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 pub mod escape_hatch;
 pub mod idris2;
+pub mod lean;
 pub mod orphan_module;
 pub mod postulate;
 pub mod safe_pragma;

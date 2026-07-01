@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
     build_dag, build_reason, event, run_lints, unused, watcher, Agda, AgdaCubical, Backend,
-    BackendKind, Idris2, LintRule, RuleConfig, Smt, State, Workspace,
+    BackendKind, Idris2, Lean, LintRule, RuleConfig, Smt, State, Verdict, Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 type RuleSet = Vec<Box<dyn LintRule>>;
 
 /// Every backend `--backend` accepts and `doctor` probes.
-const KNOWN_BACKENDS: &[&str] = &["agda", "agda-cubical", "idris2", "z3", "cvc5"];
+const KNOWN_BACKENDS: &[&str] = &["agda", "agda-cubical", "idris2", "lean4", "z3", "cvc5"];
 
 /// Resolve a `--backend` name to a backend instance. Agda is the default and
 /// v0.1 reference; Idris2 is the estate ABI language.
@@ -25,11 +25,12 @@ fn backend_for(name: &str) -> Result<Box<dyn Backend>> {
         "agda" => Ok(Box::new(Agda)),
         "agda-cubical" => Ok(Box::new(AgdaCubical)),
         "idris2" => Ok(Box::new(Idris2)),
+        "lean4" => Ok(Box::new(Lean)),
         "z3" => Ok(Box::new(Smt::z3())),
         "cvc5" => Ok(Box::new(Smt::cvc5())),
-        other => {
-            anyhow::bail!("unknown backend `{other}` (known: agda, agda-cubical, idris2, z3, cvc5)")
-        }
+        other => anyhow::bail!(
+            "unknown backend `{other}` (known: agda, agda-cubical, idris2, lean4, z3, cvc5)"
+        ),
     }
 }
 
@@ -37,7 +38,7 @@ fn backend_for(name: &str) -> Result<Box<dyn Backend>> {
 #[command(
     name = "arghda",
     version,
-    about = "Proof-workspace manager for provers/solvers (Agda, Cubical, Idris2, Z3, CVC5)"
+    about = "Proof-workspace manager for provers/solvers (Agda, Cubical, Idris2, Lean4, Z3, CVC5)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -64,7 +65,8 @@ enum Cmd {
         /// `<PATH>/.arghda/config.toml` if present.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `z3`, `cvc5`.
+        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `lean4`,
+        /// `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
         /// Also run the external `agda-unused` analyser and re-emit its
@@ -83,7 +85,8 @@ enum Cmd {
         /// Include root (search path). Defaults to the file's directory.
         #[arg(long)]
         include_root: Option<PathBuf>,
-        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `z3`, `cvc5`.
+        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `lean4`,
+        /// `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
         /// Emit the report as JSON.
@@ -106,7 +109,8 @@ enum Cmd {
         /// `<PATH>/.arghda/config.toml` if present.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `z3`, `cvc5`.
+        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `lean4`,
+        /// `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
     },
@@ -129,7 +133,8 @@ enum Cmd {
         /// `<PATH>/.arghda/config.toml` if present.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `z3`, `cvc5`.
+        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `lean4`,
+        /// `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
         /// Run the backend on every node to populate REAL prover verdicts
@@ -405,12 +410,24 @@ fn check(file: &Path, include_root: Option<&Path>, backend_name: &str, json: boo
         run_lints(file, &ctx, &rules).with_context(|| format!("linting {}", file.display()))?;
     let outcome = backend.check_file(file, include_root)?;
 
+    // Honest verdict: a lint hard-block rejects; otherwise report the
+    // backend's ACTUAL verdict word. Only `Proven` (with no hard block) is
+    // "proven-eligible" — a clean-but-unaudited Lean file is `unknown`, an
+    // SMT `sat` is `refuted`, never silently "rejected"/"ok".
     let verdict = if !outcome.available {
         "backend-unavailable"
-    } else if outcome.ok && !report.has_hard_block() {
-        "proven-eligible"
-    } else {
+    } else if report.has_hard_block() {
         "rejected"
+    } else {
+        match outcome.verdict {
+            Verdict::Proven => "proven-eligible",
+            Verdict::Refuted => "refuted",
+            Verdict::Unknown => "unknown",
+            Verdict::Admitted => "admitted",
+            Verdict::Postulated => "postulated",
+            Verdict::Error => "rejected",
+            Verdict::Unavailable => "backend-unavailable",
+        }
     };
 
     if json {
@@ -426,13 +443,12 @@ fn check(file: &Path, include_root: Option<&Path>, backend_name: &str, json: boo
         println!("{}", file.display());
         if outcome.available {
             println!(
-                "  {}: exit {}, {}",
+                "  {}: exit {}",
                 backend.name(),
                 outcome
                     .exit_code
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "?".into()),
-                if outcome.ok { "ok" } else { "FAILED" }
             );
         } else {
             println!(
