@@ -47,11 +47,10 @@ impl Default for RuleConfig {
     }
 }
 
-/// The standard lint pack, parameterised by operator config. Fails only if a
-/// supplied pattern (e.g. `headline_pattern`) is not a valid regex.
-pub fn rules_with_config(cfg: &RuleConfig) -> Result<Vec<Box<dyn LintRule>>> {
+/// The Agda lint pack around a given `missing-safe-pragma` profile.
+fn agda_pack(cfg: &RuleConfig, safe: safe_pragma::SafePragma) -> Result<Vec<Box<dyn LintRule>>> {
     Ok(vec![
-        Box::new(safe_pragma::SafePragma),
+        Box::new(safe),
         Box::new(orphan_module::OrphanModule),
         Box::new(postulate::UnjustifiedPostulate),
         Box::new(escape_hatch::EscapeHatch),
@@ -60,6 +59,20 @@ pub fn rules_with_config(cfg: &RuleConfig) -> Result<Vec<Box<dyn LintRule>>> {
             &cfg.headline_pattern,
         )?),
     ])
+}
+
+/// The standard `--safe --without-K` Agda lint pack, parameterised by
+/// operator config. Fails only if a supplied pattern (e.g.
+/// `headline_pattern`) is not a valid regex.
+pub fn rules_with_config(cfg: &RuleConfig) -> Result<Vec<Box<dyn LintRule>>> {
+    agda_pack(cfg, safe_pragma::SafePragma::standard())
+}
+
+/// The Cubical-Agda (`--cubical --safe`) lint pack — identical to the
+/// standard pack except the `missing-safe-pragma` rule requires `--cubical`
+/// instead of `--without-K`.
+pub fn agda_cubical_rules(cfg: &RuleConfig) -> Result<Vec<Box<dyn LintRule>>> {
+    agda_pack(cfg, safe_pragma::SafePragma::cubical())
 }
 
 /// The standard lint pack with default config. The default pattern is a

@@ -4,8 +4,8 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, build_reason, event, run_lints, unused, watcher, Agda, Backend, Idris2, LintRule,
-    RuleConfig, Smt, State, Workspace,
+    build_dag, build_reason, event, run_lints, unused, watcher, Agda, AgdaCubical, Backend, Idris2,
+    LintRule, RuleConfig, Smt, State, Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -20,10 +20,13 @@ type RuleSet = Vec<Box<dyn LintRule>>;
 fn backend_for(name: &str) -> Result<Box<dyn Backend>> {
     match name {
         "agda" => Ok(Box::new(Agda)),
+        "agda-cubical" => Ok(Box::new(AgdaCubical)),
         "idris2" => Ok(Box::new(Idris2)),
         "z3" => Ok(Box::new(Smt::z3())),
         "cvc5" => Ok(Box::new(Smt::cvc5())),
-        other => anyhow::bail!("unknown backend `{other}` (known: agda, idris2, z3, cvc5)"),
+        other => {
+            anyhow::bail!("unknown backend `{other}` (known: agda, agda-cubical, idris2, z3, cvc5)")
+        }
     }
 }
 
@@ -31,7 +34,7 @@ fn backend_for(name: &str) -> Result<Box<dyn Backend>> {
 #[command(
     name = "arghda",
     version,
-    about = "Proof-workspace manager for provers/solvers (Agda, Idris2, Z3, CVC5)"
+    about = "Proof-workspace manager for provers/solvers (Agda, Cubical, Idris2, Z3, CVC5)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -58,7 +61,7 @@ enum Cmd {
         /// `<PATH>/.arghda/config.toml` if present.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Prover/solver backend: `agda` (default), `idris2`, `z3`, `cvc5`.
+        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
         /// Also run the external `agda-unused` analyser and re-emit its
@@ -77,7 +80,7 @@ enum Cmd {
         /// Include root (search path). Defaults to the file's directory.
         #[arg(long)]
         include_root: Option<PathBuf>,
-        /// Prover/solver backend: `agda` (default), `idris2`, `z3`, `cvc5`.
+        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
         /// Emit the report as JSON.
@@ -100,7 +103,7 @@ enum Cmd {
         /// `<PATH>/.arghda/config.toml` if present.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Prover/solver backend: `agda` (default), `idris2`, `z3`, `cvc5`.
+        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
     },
@@ -123,7 +126,7 @@ enum Cmd {
         /// `<PATH>/.arghda/config.toml` if present.
         #[arg(long)]
         config: Option<PathBuf>,
-        /// Prover/solver backend: `agda` (default), `idris2`, `z3`, `cvc5`.
+        /// Backend: `agda` (default), `agda-cubical`, `idris2`, `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
         /// Run the backend on every node to populate REAL prover verdicts
