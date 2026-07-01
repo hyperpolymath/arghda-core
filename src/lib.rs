@@ -15,6 +15,7 @@ pub mod dag;
 pub mod diagnostic;
 pub mod event;
 pub mod graph;
+pub mod groove;
 pub mod hash;
 pub mod lint;
 pub mod proven;
@@ -29,6 +30,7 @@ pub use dag::{build as build_dag, DagDocument};
 pub use diagnostic::{Diagnostic, LintReport, Severity};
 pub use event::{Event, EventKind};
 pub use graph::{build as build_graph, ImportGraph};
+pub use groove::{manifest as groove_manifest, GrooveManifest};
 pub use lint::{default_rules, rules_with_config, run_lints, LintRule, RuleConfig};
 pub use prover::{
     default_backend, Agda, AgdaCubical, Backend, BackendKind, Idris2, Lean, Outcome, Probe, Smt,

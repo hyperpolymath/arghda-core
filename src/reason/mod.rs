@@ -531,4 +531,65 @@ mod tests {
         assert!(wired.contains("Deep"));
         assert!(!wired.contains("Orphan"));
     }
+
+    // ── reason/0.1 JSON contract freeze (M11) ────────────────────────────
+    // The visual layer (arghda-studio) + Groove consumers depend on this
+    // shape. A rename here is a BREAKING change — bump the version, don't
+    // silently edit. This test pins the schema so that can't happen by
+    // accident.
+    #[test]
+    fn reason_json_contract_is_frozen_at_0_1() {
+        use crate::dag::{DagDocument, DagNode, LintSummary};
+        use crate::graph::Edge;
+        use crate::prover::Agda;
+        use std::path::PathBuf;
+
+        let dag = DagDocument {
+            version: "0.1",
+            include_root: PathBuf::from("/r"),
+            entry_modules: vec![PathBuf::from("/r/All.agda")],
+            generated_at: "t".to_string(),
+            nodes: vec![
+                DagNode {
+                    id: "All".to_string(),
+                    file: PathBuf::from("All.agda"),
+                    status: "clean",
+                    lint: LintSummary::default(),
+                    headlines: vec![],
+                },
+                DagNode {
+                    id: "Util".to_string(),
+                    file: PathBuf::from("Util.agda"),
+                    status: "clean",
+                    lint: LintSummary::default(),
+                    headlines: vec![],
+                },
+            ],
+            edges: vec![Edge {
+                from: "All".to_string(),
+                to: "Util".to_string(),
+                kind: "imports",
+            }],
+            blocked: vec![],
+        };
+        let doc = build(dag, &Agda, &BTreeMap::new(), &BTreeSet::new());
+        let v = serde_json::to_value(&doc).unwrap();
+
+        assert_eq!(v["version"], "0.1");
+        assert!(v["dag"].is_object(), "the DAG is embedded verbatim");
+        assert!(v["crt_roots"].is_array());
+        for k in [
+            "id",
+            "self_verdict",
+            "effective",
+            "verdict_evidence",
+            "soundness",
+            "wired",
+        ] {
+            assert!(v["nodes"][0].get(k).is_some(), "reason node missing `{k}`");
+        }
+        for k in ["from", "to", "junct", "kind"] {
+            assert!(v["edges"][0].get(k).is_some(), "reason edge missing `{k}`");
+        }
+    }
 }
