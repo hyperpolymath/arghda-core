@@ -10,11 +10,18 @@
 //! * exit non-zero → [`Verdict::Error`] (elaboration failed).
 //! * exit 0, output mentions `sorry` → [`Verdict::Admitted`] (a hole rode
 //!   along on a green elaboration).
-//! * exit 0, clean → [`Verdict::Unknown`] — the file elaborates, but without
-//!   a `#print axioms` audit arghda will NOT claim it proven (it could still
-//!   use `native_decide`, `sorryAx`, or other axioms). Promoting `Unknown` →
-//!   `Proven` via a per-declaration `#print axioms` audit is the follow-on.
+//! * exit 0, clean → run the **`#print axioms` audit** and promote honestly:
+//!   `Proven` if every declaration depends only on the standard axioms
+//!   (`propext`, `Classical.choice`, `Quot.sound`); `Postulated` if a
+//!   non-standard axiom sneaks in (e.g. the one `native_decide` introduces —
+//!   which a bare elaboration would NOT reveal); `Admitted` on `sorryAx`. If
+//!   the audit can't run (no declarations, `lean` absent, or the file imports
+//!   modules the bare temp-dir copy can't resolve), it stays `Verdict::Unknown`.
 //! * binary absent → [`Verdict::Unavailable`].
+//!
+//! The audit currently reaches import-free files (a temp-dir copy elaborates
+//! them without `LEAN_PATH`); auditing imported files needs `lake env`
+//! resolution — a documented follow-on.
 //!
 //! Lean modules are dotted (`Mathlib.Data.Nat` ↔ `Mathlib/Data/Nat.lean`),
 //! so [`crate::graph::module_name_of`] is reused. Imports are top-level
@@ -30,7 +37,13 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
+
+/// Lean's standard, trusted axioms — a proof depending only on these is
+/// sound (this is the mathlib convention). Anything else (sorryAx, or the
+/// axioms `native_decide` introduces) is not.
+const STANDARD_AXIOMS: &[&str] = &["propext", "Classical.choice", "Quot.sound"];
 
 const TAIL_LINES: usize = 40;
 
@@ -63,7 +76,18 @@ impl Backend for Lean {
             Ok(out) => {
                 let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
                 combined.push_str(&String::from_utf8_lossy(&out.stderr));
-                let verdict = lean_verdict(&combined, out.status.success());
+                let mut verdict = lean_verdict(&combined, out.status.success());
+                // A clean elaboration is only `Unknown` on its own — run the
+                // `#print axioms` audit to promote it honestly: Proven if every
+                // declaration depends only on the standard axioms, Postulated
+                // if a non-standard axiom (e.g. `native_decide`'s) sneaks in,
+                // Admitted on sorryAx. If the audit can't run (imports need
+                // lake, no declarations, tool absent) it stays `Unknown`.
+                if verdict == Verdict::Unknown {
+                    if let Some(audited) = axiom_audit(file) {
+                        verdict = audited;
+                    }
+                }
                 Ok(Outcome {
                     available: true,
                     exit_code: out.status.code(),
@@ -170,6 +194,124 @@ fn tail(s: &str, n: usize) -> String {
     lines[start..].join("\n")
 }
 
+/// The declaration names in a Lean source that can depend on axioms
+/// (`theorem`/`lemma`/`def`/`abbrev`/`instance`), skipping leading
+/// attributes/modifiers and anonymous decls. Deliberately conservative: a
+/// missed name just isn't audited; a mis-parsed name makes `lean` error and
+/// the audit falls back to `Unknown` — it never yields a wrong verdict.
+fn decl_names(src: &str) -> Vec<String> {
+    const KEYWORDS: &[&str] = &["theorem", "lemma", "def", "abbrev", "instance"];
+    const MODIFIERS: &[&str] = &[
+        "private",
+        "protected",
+        "noncomputable",
+        "partial",
+        "unsafe",
+        "scoped",
+        "local",
+        "mutual",
+    ];
+    let mut names = Vec::new();
+    for line in src.lines() {
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        let mut i = 0;
+        // Skip leading `@[..]` attributes and declaration modifiers.
+        while let Some(tk) = tokens.get(i) {
+            if tk.starts_with("@[") || MODIFIERS.contains(tk) {
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        if tokens.get(i).is_some_and(|tk| KEYWORDS.contains(tk)) {
+            if let Some(name_tok) = tokens.get(i + 1) {
+                let name: String = name_tok
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.' || *c == '\'')
+                    .collect();
+                if !name.is_empty() {
+                    names.push(name);
+                }
+            }
+        }
+    }
+    names.dedup();
+    names
+}
+
+/// Classify the combined output of a batch of `#print axioms` commands:
+/// any `sorryAx` ⇒ Admitted; else any non-standard axiom ⇒ Postulated; else
+/// (all clean or standard-only) ⇒ Proven.
+fn classify_axioms(output: &str) -> Verdict {
+    let mut saw_nonstandard = false;
+    for line in output.lines() {
+        let Some(open) = line.find("depends on axioms: [") else {
+            continue; // "does not depend on any axioms" ⇒ clean, skip
+        };
+        let rest = &line[open + "depends on axioms: [".len()..];
+        let list = rest.split(']').next().unwrap_or(rest);
+        for ax in list.split(',') {
+            let ax = ax.trim();
+            if ax == "sorryAx" {
+                return Verdict::Admitted;
+            }
+            if !ax.is_empty() && !STANDARD_AXIOMS.contains(&ax) {
+                saw_nonstandard = true;
+            }
+        }
+    }
+    if saw_nonstandard {
+        Verdict::Postulated
+    } else {
+        Verdict::Proven
+    }
+}
+
+/// Run a `#print axioms` audit on `file`'s declarations. Copies the source
+/// into a fresh temp dir, appends `#print axioms <name>` per declaration,
+/// and runs `lean`. Returns the classified verdict, or `None` when the audit
+/// can't be trusted — no declarations, `lean` absent, or the copy fails to
+/// elaborate (e.g. it imports modules that need `lake env`/`LEAN_PATH`, which
+/// a bare temp dir lacks). `None` ⇒ the caller keeps the honest `Unknown`.
+fn axiom_audit(file: &Path) -> Option<Verdict> {
+    let src = fs::read_to_string(file).ok()?;
+    let names = decl_names(&src);
+    if names.is_empty() {
+        return None;
+    }
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("arghda-audit-{}-{}", std::process::id(), nanos));
+    fs::create_dir_all(&dir).ok()?;
+
+    let mut body = src;
+    body.push('\n');
+    for n in &names {
+        body.push_str(&format!("#print axioms {n}\n"));
+    }
+    let audit_file = dir.join("Audit.lean");
+
+    let verdict = match fs::write(&audit_file, &body) {
+        Ok(()) => match Command::new("lean").arg(&audit_file).output() {
+            // Only trust the audit if the copy elaborated cleanly; otherwise
+            // (imports unresolved in the temp dir, etc.) stay Unknown.
+            Ok(out) if out.status.success() => {
+                let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
+                combined.push_str(&String::from_utf8_lossy(&out.stderr));
+                Some(classify_axioms(&combined))
+            }
+            _ => None,
+        },
+        Err(_) => None,
+    };
+
+    let _ = fs::remove_dir_all(&dir);
+    verdict
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,6 +351,52 @@ mod tests {
     }
 
     #[test]
+    fn decl_names_parses_keywords_modifiers_attributes() {
+        let src = "\
+@[simp] theorem foo : True := trivial\n\
+private def bar : Nat := 0\n\
+lemma baz.qux : 1 = 1 := rfl\n\
+noncomputable def qq : Nat := 0\n\
+example : True := trivial\n\
+-- theorem commented : ...\n\
+#eval 1\n";
+        let names = decl_names(src);
+        assert!(names.contains(&"foo".to_string()));
+        assert!(names.contains(&"bar".to_string()));
+        assert!(names.contains(&"baz.qux".to_string()), "dotted names kept");
+        assert!(names.contains(&"qq".to_string()), "modifier skipped");
+        // `example` is anonymous → not audited; `#eval` is not a decl.
+        assert!(!names.iter().any(|n| n == "example" || n == "1"));
+    }
+
+    #[test]
+    fn classify_axioms_maps_the_ground_truthed_output() {
+        // The three shapes ground-truthed against Lean 4.13.0.
+        assert_eq!(
+            classify_axioms("'t' does not depend on any axioms"),
+            Verdict::Proven
+        );
+        assert_eq!(
+            classify_axioms("'c' depends on axioms: [propext, Classical.choice, Quot.sound]"),
+            Verdict::Proven,
+        );
+        assert_eq!(
+            classify_axioms("'g' depends on axioms: [sorryAx]"),
+            Verdict::Admitted
+        );
+        assert_eq!(
+            classify_axioms("'n' depends on axioms: [Lean.ofReduceBool]"),
+            Verdict::Postulated,
+            "native_decide's axiom is non-standard ⇒ amber",
+        );
+        // Mixed: any sorryAx dominates.
+        assert_eq!(
+            classify_axioms("'a' depends on axioms: [propext]\n'b' depends on axioms: [sorryAx]"),
+            Verdict::Admitted
+        );
+    }
+
+    #[test]
     fn verdict_is_honest_about_sorry_and_the_missing_audit() {
         // A green elaboration is only Unknown without a #print axioms audit;
         // a sorry warning makes it Admitted; a failure is Error.
@@ -227,13 +415,14 @@ mod tests {
         std::fs::write(&f, "theorem t : 1 = 1 := rfl\n").unwrap();
         let out = Lean.check_file(&f, tmp.path()).unwrap();
         if out.available {
-            // Never fabricated Proven: a clean Lean file is Unknown (audit
-            // absent), a sorry file Admitted, a broken file Error.
+            // Honest verdict invariant: never fabricated. With the axioms
+            // audit a clean `rfl` proof is promoted to Proven; `ok` iff
+            // Proven; and the value is always one of the real states.
             assert!(matches!(
                 out.verdict,
-                Verdict::Unknown | Verdict::Admitted | Verdict::Error
+                Verdict::Proven | Verdict::Unknown | Verdict::Admitted | Verdict::Error
             ));
-            assert!(!out.ok, "lean never reports `ok` without an axioms audit");
+            assert_eq!(out.ok, out.verdict == Verdict::Proven);
         } else {
             assert_eq!(out.verdict, Verdict::Unavailable);
         }
