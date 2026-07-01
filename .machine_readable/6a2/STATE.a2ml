@@ -45,7 +45,7 @@ milestones = [
   { name = "M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island)", completion = 0 },
   { name = "M3: Flying-Logic reasoning graph (src/reason: And|Or juncts, demote-only cycle-safe Verdict propagation, additive studio JSON)", completion = 100 },
   { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 90 },
-  { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 0 },
+  { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 100 },
   { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 0 },
   { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 0 },
   { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 0 },
@@ -59,6 +59,21 @@ milestones = [
 # are scripted (behind --heavy/--mizar) but not installed this session.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
+#
+# M5 landed 2026-07-01: SMT solver backends (Z3, CVC5) — the FIRST Solver-kind
+# backends, exercising the other half of the taxonomy. src/prover/smt.rs: one
+# `Smt { name, cmd }` type with `Smt::z3()`/`Smt::cvc5()`. Kind=Solver, ext
+# .smt2. check_file runs `<solver> <file.smt2>` and PARSES stdout (never the
+# bare exit code — both sat and unsat exit 0): unsat→Proven (VC discharged),
+# sat→Refuted (model exists), unknown→Unknown, (error…)/nonzero→Error, absent→
+# Unavailable. Multi-check aggregate: any sat⇒Refuted; else any unknown⇒Unknown;
+# else all unsat⇒Proven; no token⇒Error (no silent pass). Solvers are standalone
+# queries: direct_imports=[] (isolated nodes — valid), discover_roots=[] (no
+# root convention → wired not meaningful), lint_rules=[]. Wired via --backend
+# z3|cvc5 (backend_for). Ground-truthed vs Z3 4.8.12 + CVC5 1.2.0. 100 tests
+# (75 lib + 25 integration; +5 smt unit +2 smt integration, hermetic). Dogfooded
+# REAL: `check --backend z3 unsat.smt2`→proven-eligible; `…sat.smt2`→rejected;
+# `reason --backend cvc5 --check`→sat=refuted/unsound, unsat=proven/sound.
 #
 # M4 landed 2026-07-01 (90%): the Idris2 backend — arghda is now genuinely
 # multi-backend. src/prover/idris2.rs: `idris2 --check --source-dir <root>
@@ -120,12 +135,12 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "M1 (Backend trait) + M3 (reasoning graph) + M4 (Idris2) DONE. Next, all unblocked by the stable trait + --backend selector:",
-  "Flying-Logic epic M5: SMT solver backends (Z3, CVC5) — the FIRST Solver-kind backend; SMT-LIB2 -> unsat(Proven)/sat(Refuted)/unknown(Unknown). Both binaries provisioned. Exercises the Solver half of the taxonomy (no imports; isolated nodes).",
-  "Flying-Logic epic M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island; cross-flag import edges forbidden).",
-  "M4 follow-on (the missing 10%): .ipkg-declared roots; totality-hole (?name) + per-def `partial` lint.",
-  "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs) so `arghda reason <workspace>` lights the cone without --check.",
-  "Finish M0: add the `arghda doctor` Rust subcommand and repoint `just doctor` at it (interim shells provision-provers.sh --verify-only).",
+  "M1 (Backend trait) + M3 (reasoning graph) + M4 (Idris2) + M5 (Z3/CVC5) DONE. Both interaction models (Assistant + Solver) now real. Next:",
+  "Flying-Logic epic M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island; cross-flag import edges forbidden). Small — extends the existing Agda backend.",
+  "Flying-Logic epic M6: Lean4 adapter (lake build + #print axioms audit → honest Unknown soundness when the audit is absent). Lean 4.13.0 provisioned.",
+  "Finish M0: add the `arghda doctor` Rust subcommand (report which backends are runnable — now agda/idris2/z3/cvc5) and repoint `just doctor` at it.",
+  "M4 follow-on: .ipkg-declared roots; totality-hole (?name) + per-def `partial` lint.",
+  "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs).",
   "Serve /.well-known/groove for PanLL discovery (Groove protocol) — folds into M11.",
 ]
 
@@ -135,11 +150,9 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M4: 70 lib + 23 integration = 93 tests pass. Dogfooded via real CLI
-# runs on BOTH backends: agda (`check`/`reason --check`) and idris2 (`check
-# --backend idris2` → proven-eligible; `reason --backend idris2 --check` →
-# live-typechecked cone). Dogfooded historically against echo-types +
-# agda-unused.
+# post-M5: 75 lib + 25 integration = 100 tests pass. Dogfooded via real CLI on
+# all four backends: agda + idris2 (Assistant), z3 + cvc5 (Solver). Dogfooded
+# historically against echo-types + agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]
