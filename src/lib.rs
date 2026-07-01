@@ -35,8 +35,8 @@ pub use graph::{build as build_graph, ImportGraph};
 pub use groove::{manifest as groove_manifest, GrooveManifest};
 pub use lint::{default_rules, rules_with_config, run_lints, LintRule, RuleConfig};
 pub use prover::{
-    default_backend, Agda, AgdaCubical, Backend, BackendKind, Idris2, Lean, Outcome, Probe, Smt,
-    Verdict,
+    default_backend, Agda, AgdaCubical, Backend, BackendKind, Coq, Idris2, Lean, Outcome, Probe,
+    Smt, Verdict,
 };
 pub use reason::{
     build as build_reason, workspace_verdicts, Junct, ReasonDocument, ReasonEdge, ReasonNode,

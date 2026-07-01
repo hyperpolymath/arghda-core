@@ -5,6 +5,7 @@ use crate::diagnostic::LintReport;
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
+pub mod coq;
 pub mod escape_hatch;
 pub mod idris2;
 pub mod lean;
