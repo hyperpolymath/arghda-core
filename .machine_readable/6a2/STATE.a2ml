@@ -6,7 +6,7 @@
 [metadata]
 project = "arghda-core"
 version = "0.1.0"
-last-updated = "2026-06-20"
+last-updated = "2026-07-01"
 status = "active"  # active | paused | archived
 
 [project-context]
@@ -33,17 +33,50 @@ milestones = [
   { name = "Groove service manifest (/.well-known/groove) for PanLL discovery", completion = 0 },
 ]
 
+# "Flying Logic for provers/solvers" epic (v0.2+): generalise the Agda-only
+# engine into a multi-backend reasoning-graph workspace. Two backend kinds:
+# proof-assistants (typecheck a file -> exit code) and solvers (SMT-LIB2 ->
+# sat/unsat/unknown). Backends shell out to real binaries; a node is only
+# "proven" on a real exit-0 (never embed a prover). See the plan doc.
+[route-to-flying-logic]
+milestones = [
+  { name = "M0: provision-provers.sh (pinned, honest --version verification) + `just provision/doctor` recipes", completion = 80 },
+  { name = "M1: Backend trait (Assistant|Solver kinds; Outcome/Verdict); agda.rs -> prover/agda.rs; graph/dag take &dyn Backend (pure refactor, 50 tests stay green)", completion = 0 },
+  { name = "M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island)", completion = 0 },
+  { name = "M3: Flying-Logic reasoning graph (src/reason: And|Or juncts, demote-only cycle-safe Verdict propagation, additive studio JSON)", completion = 0 },
+  { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 0 },
+  { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 0 },
+  { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 0 },
+  { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 0 },
+  { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 0 },
+  { name = "M9: Isabelle adapter (--heavy; dogfood tropical-resource-typing .thy)", completion = 0 },
+  { name = "M10: Mizar adapter (detect-only first; highest uncertainty)", completion = 0 },
+  { name = "M11: studio JSON freeze (reason/0.1) + Groove manifest", completion = 0 },
+]
+# M0 provisioning verified in-container 2026-07-01: agda 2.6.3 (+stdlib v2.3
+# +cubical lib), zig 0.15.2, z3 4.8.12, cvc5 1.2.0, lean 4.13.0 all report
+# real --version. idris2 v0.7.0 builds via chez bootstrap. Coq/Isabelle/Mizar
+# are scripted (behind --heavy/--mizar) but not installed this session.
+# Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
+# the script's --verify-only table).
+
 [blockers-and-issues]
 # No active blockers. v0.1 lint set + DAG schema (arghda-spec.adoc) are
 # complete. The SPDX licence invariant is applied and enforced
 # (scripts/check-spdx.sh; .machine_readable/licensing-policy.toml).
+# 2026-07-01: fixed a pre-existing checker bug — check-spdx.sh's prose variable
+# was set to MPL-2.0, contradicting the declared policy (prose = CC-BY-SA-4.0 in
+# licensing-policy.toml) and the checker's own failure label; it now matches
+# the declaration. NO licence header on any file changed; the LICENSES/ REUSE
+# dir is now excluded (canonical texts). This was blocking `just license-check`.
 
 [critical-next-actions]
 actions = [
-  "Template-applicability: rsr-profile.a2ml declares capabilities (landed); estate policy + gate model + reference checker landed in hyperpolymath/standards#391 + #392 (pure capability-gating). Follow-up: wire the standards rsr-profile check into CI.",
-  "Transitive-import closure hashing landed (workspace [proven] include_root); follow-up: also expose it as a --include-root CLI flag on promote/stale.",
-  "Serve /.well-known/groove for PanLL discovery (Groove protocol)",
-  "Scaffold arghda-studio (AffineScript visual layer consuming the dag JSON)",
+  "Flying-Logic epic M1: introduce the Backend trait (Assistant|Solver) and move agda.rs to prover/agda.rs as a PURE REFACTOR — the 50 existing tests are the oracle, they must stay green with no behaviour change. This is the keystone everything else rides on.",
+  "Flying-Logic epic M3: src/reason reasoning graph (And|Or juncts + demote-only cycle-safe Verdict propagation) — independent of new backends, lands the headline capability early.",
+  "Finish M0: add the `arghda doctor` Rust subcommand and repoint `just doctor` at it (interim shells provision-provers.sh --verify-only).",
+  "Transitive-import closure hashing landed; follow-up: expose it as a --include-root CLI flag on promote/stale.",
+  "Serve /.well-known/groove for PanLL discovery (Groove protocol) — folds into M11.",
 ]
 
 [maintenance-status]
