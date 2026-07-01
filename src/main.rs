@@ -4,8 +4,8 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, event, run_lints, unused, watcher, Agda, Backend, LintRule, RuleConfig, State,
-    Workspace,
+    build_dag, build_reason, event, run_lints, unused, watcher, Agda, Backend, LintRule,
+    RuleConfig, State, Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -83,6 +83,31 @@ enum Cmd {
         #[arg(long)]
         config: Option<PathBuf>,
     },
+    /// Emit the Flying-Logic reasoning graph (JSON) for the tree at PATH:
+    /// the DAG plus a demote-only verdict propagation. Without `--check`,
+    /// clean nodes are honestly `unknown`; postulate/pragma/escape-hatch
+    /// caps still propagate downstream through import edges.
+    Reason {
+        /// Directory containing `.agda` files; treated as the include root.
+        path: PathBuf,
+        /// Root module for orphan detection; repeatable. Defaults to every
+        /// `All.agda`/`Smoke.agda` discovered under PATH.
+        #[arg(long)]
+        entry: Vec<PathBuf>,
+        /// Regex a name must match to count as a pinnable headline
+        /// (`unpinned-headline` rule). Defaults to the spec pattern.
+        #[arg(long)]
+        headline_pattern: Option<String>,
+        /// Path to an `.arghda/config.toml`. Defaults to
+        /// `<PATH>/.arghda/config.toml` if present.
+        #[arg(long)]
+        config: Option<PathBuf>,
+        /// Run the backend on every node to populate REAL prover verdicts
+        /// (honest exit codes). Slower — typechecks each module. Off by
+        /// default, in which case clean nodes are `unknown`.
+        #[arg(long)]
+        check: bool,
+    },
     /// Claim a file: inbox -> working.
     Claim { workspace: PathBuf, file: String },
     /// Promote a file: working -> proven.
@@ -143,6 +168,19 @@ fn main() -> Result<()> {
             &entry,
             headline_pattern.as_deref(),
             config.as_deref(),
+        )?,
+        Cmd::Reason {
+            path,
+            entry,
+            headline_pattern,
+            config,
+            check,
+        } => reason(
+            &path,
+            &entry,
+            headline_pattern.as_deref(),
+            config.as_deref(),
+            check,
         )?,
         Cmd::Claim { workspace, file } => {
             transition(&workspace, &file, State::Inbox, State::Working)?
@@ -350,6 +388,45 @@ fn dag(
         &cfg.headline_pattern,
         &backend,
     )?;
+    println!("{}", serde_json::to_string_pretty(&doc)?);
+    Ok(())
+}
+
+fn reason(
+    include_root: &Path,
+    entry: &[PathBuf],
+    headline_pattern: Option<&str>,
+    config: Option<&Path>,
+    do_check: bool,
+) -> Result<()> {
+    let backend = Agda;
+    let (roots, rules, cfg) =
+        resolve_roots_and_rules(include_root, entry, headline_pattern, config, &backend)?;
+    let dag_doc = build_dag(
+        include_root,
+        &roots,
+        &rules,
+        &cfg.headline_pattern,
+        &backend,
+    )?;
+
+    // Real prover verdicts by module id. Empty unless `--check`, in which
+    // case each node is typechecked for real (honest exit codes) — a green
+    // node is only ever `proven` because the tool returned 0. Staleness
+    // needs a workspace `proven/` state, so it stays empty here.
+    let mut verdicts = std::collections::BTreeMap::new();
+    let stale = std::collections::BTreeSet::new();
+    if do_check {
+        for node in &dag_doc.nodes {
+            let file = include_root.join(&node.file);
+            let outcome = backend.check_file(&file, include_root)?;
+            if outcome.available {
+                verdicts.insert(node.id.clone(), outcome.verdict);
+            }
+        }
+    }
+
+    let doc = build_reason(dag_doc, &backend, &verdicts, &stale);
     println!("{}", serde_json::to_string_pretty(&doc)?);
     Ok(())
 }
