@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 pub mod coq;
 pub mod escape_hatch;
 pub mod idris2;
+pub mod isabelle;
 pub mod lean;
 pub mod orphan_module;
 pub mod postulate;
