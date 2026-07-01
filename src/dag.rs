@@ -13,6 +13,7 @@
 use crate::diagnostic::Severity;
 use crate::graph::{self, Edge};
 use crate::lint::{run_lints, unpinned_headline, LintContext, LintRule};
+use crate::prover::Backend;
 use crate::timestamp::now_rfc3339;
 use anyhow::{Context, Result};
 use regex::Regex;
@@ -61,18 +62,20 @@ pub struct DagDocument {
 }
 
 /// Build the DAG document for the source tree at `include_root`, using
-/// `entry_modules` (the union of CI roots) for the orphan-reachability rule,
-/// `rules` as the lint pack, and `headline_pattern` (the same regex the
-/// `unpinned-headline` rule uses) to populate each node's `headlines` array.
+/// `backend` for the per-language import graph, `entry_modules` (the union
+/// of CI roots) for the orphan-reachability rule, `rules` as the lint pack,
+/// and `headline_pattern` (the same regex the `unpinned-headline` rule
+/// uses) to populate each node's `headlines` array.
 pub fn build(
     include_root: &Path,
     entry_modules: &[PathBuf],
     rules: &[Box<dyn LintRule>],
     headline_pattern: &str,
+    backend: &dyn Backend,
 ) -> Result<DagDocument> {
     let headline_matcher = Regex::new(headline_pattern)
         .with_context(|| format!("compiling headline pattern `{headline_pattern}`"))?;
-    let graph = graph::build(include_root)?;
+    let graph = graph::build(include_root, backend)?;
     let ctx = LintContext {
         include_root,
         entry_modules,

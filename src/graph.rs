@@ -14,6 +14,7 @@
 //! include root: the graph is the project's internal dependency DAG, so
 //! stdlib / external imports are intentionally omitted.
 
+use crate::prover::Backend;
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
@@ -177,10 +178,14 @@ pub struct ImportGraph {
     pub edges: Vec<Edge>,
 }
 
-/// Walk every `.agda` file under `include_root` and build the internal
-/// import graph. Output is deterministic (nodes and edges are sorted),
-/// which keeps the emitted DAG stable for diffing and tests.
-pub fn build(include_root: &Path) -> Result<ImportGraph> {
+/// Walk every source file the `backend` claims (by extension) under
+/// `include_root` and build the internal import graph, using the backend's
+/// per-language module-name / import parsing. Output is deterministic
+/// (nodes and edges are sorted), which keeps the emitted DAG stable for
+/// diffing and tests. A solver backend with no import notion yields an
+/// edge-free set of isolated nodes, which is valid.
+pub fn build(include_root: &Path, backend: &dyn Backend) -> Result<ImportGraph> {
+    let exts = backend.extensions();
     // module id -> relative file path, for every in-tree module.
     let mut by_id: BTreeMap<String, PathBuf> = BTreeMap::new();
     for entry in WalkDir::new(include_root)
@@ -188,10 +193,14 @@ pub fn build(include_root: &Path) -> Result<ImportGraph> {
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("agda") {
+        let is_source = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|e| exts.contains(&e));
+        if !is_source {
             continue;
         }
-        if let Some(id) = module_name_of(path, include_root) {
+        if let Some(id) = backend.module_name_of(path, include_root) {
             let rel = path
                 .strip_prefix(include_root)
                 .unwrap_or(path)
@@ -210,8 +219,8 @@ pub fn build(include_root: &Path) -> Result<ImportGraph> {
 
     let mut edges = Vec::new();
     for id in by_id.keys() {
-        let path = module_to_path(id, include_root);
-        for imp in direct_imports(&path)? {
+        let path = backend.module_to_path(id, include_root);
+        for imp in backend.direct_imports(&path)? {
             // Keep only edges to modules that exist in-tree.
             if by_id.contains_key(&imp) {
                 edges.push(Edge {

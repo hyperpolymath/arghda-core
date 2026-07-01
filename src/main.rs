@@ -4,8 +4,8 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, check_file, default_rules, event, graph, rules_with_config, run_lints, unused,
-    watcher, LintRule, RuleConfig, State, Workspace,
+    build_dag, event, run_lints, unused, watcher, Agda, Backend, LintRule, RuleConfig, State,
+    Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -177,12 +177,14 @@ fn scan(
     unused: bool,
     json: bool,
 ) -> Result<()> {
+    let backend = Agda;
     let (roots, rules, _cfg) =
-        resolve_roots_and_rules(include_root, entry, headline_pattern, config)?;
+        resolve_roots_and_rules(include_root, entry, headline_pattern, config, &backend)?;
     let ctx = LintContext {
         include_root,
         entry_modules: &roots,
     };
+    let exts = backend.extensions();
 
     let mut reports = Vec::new();
     for entry in WalkDir::new(include_root)
@@ -190,7 +192,11 @@ fn scan(
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("agda") {
+        let is_source = path
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|e| exts.contains(&e));
+        if !is_source {
             continue;
         }
         let report =
@@ -274,7 +280,8 @@ fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
 
     // The orphan rule self-skips when the file is its own root, which is
     // exactly what a single-file check wants.
-    let rules = default_rules();
+    let backend = Agda;
+    let rules = backend.lint_rules(&RuleConfig::default())?;
     let roots = [file.to_path_buf()];
     let ctx = LintContext {
         include_root,
@@ -282,11 +289,11 @@ fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
     };
     let report =
         run_lints(file, &ctx, &rules).with_context(|| format!("linting {}", file.display()))?;
-    let agda = check_file(file, include_root)?;
+    let outcome = backend.check_file(file, include_root)?;
 
-    let verdict = if !agda.available {
-        "agda-unavailable"
-    } else if agda.ok && !report.has_hard_block() {
+    let verdict = if !outcome.available {
+        "backend-unavailable"
+    } else if outcome.ok && !report.has_hard_block() {
         "proven-eligible"
     } else {
         "rejected"
@@ -296,23 +303,28 @@ fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
         let payload = serde_json::json!({
             "version": "0.1",
             "file": file,
-            "agda": agda,
+            "backend": outcome,
             "lint": report,
             "verdict": verdict,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
         println!("{}", file.display());
-        if agda.available {
+        if outcome.available {
             println!(
-                "  agda: exit {}, {}",
-                agda.exit_code
+                "  {}: exit {}, {}",
+                backend.name(),
+                outcome
+                    .exit_code
                     .map(|c| c.to_string())
                     .unwrap_or_else(|| "?".into()),
-                if agda.ok { "ok" } else { "FAILED" }
+                if outcome.ok { "ok" } else { "FAILED" }
             );
         } else {
-            println!("  agda: not found on PATH (typecheck skipped)");
+            println!(
+                "  {}: not found on PATH (typecheck skipped)",
+                backend.name()
+            );
         }
         for d in &report.diagnostics {
             println!("  [{}] {}: {}", sev_tag(d.severity), d.rule, d.message);
@@ -328,9 +340,16 @@ fn dag(
     headline_pattern: Option<&str>,
     config: Option<&Path>,
 ) -> Result<()> {
+    let backend = Agda;
     let (roots, rules, cfg) =
-        resolve_roots_and_rules(include_root, entry, headline_pattern, config)?;
-    let doc = build_dag(include_root, &roots, &rules, &cfg.headline_pattern)?;
+        resolve_roots_and_rules(include_root, entry, headline_pattern, config, &backend)?;
+    let doc = build_dag(
+        include_root,
+        &roots,
+        &rules,
+        &cfg.headline_pattern,
+        &backend,
+    )?;
     println!("{}", serde_json::to_string_pretty(&doc)?);
     Ok(())
 }
@@ -369,6 +388,7 @@ fn resolve_roots_and_rules(
     entry: &[PathBuf],
     headline_pattern: Option<&str>,
     config: Option<&Path>,
+    backend: &dyn Backend,
 ) -> Result<(Vec<PathBuf>, RuleSet, RuleConfig)> {
     for e in entry {
         if !e.is_file() {
@@ -376,7 +396,7 @@ fn resolve_roots_and_rules(
         }
     }
     let roots = if entry.is_empty() {
-        graph::discover_roots(include_root)
+        backend.discover_roots(include_root)
     } else {
         entry.to_vec()
     };
@@ -386,12 +406,13 @@ fn resolve_roots_and_rules(
             "note: no root modules (All.agda/Smoke.agda) found under {}; skipping orphan-module rule",
             include_root.display()
         );
-        rules_with_config(&cfg)?
+        backend
+            .lint_rules(&cfg)?
             .into_iter()
             .filter(|r| r.name() != "orphan-module")
             .collect()
     } else {
-        rules_with_config(&cfg)?
+        backend.lint_rules(&cfg)?
     };
     Ok((roots, rules, cfg))
 }
