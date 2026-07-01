@@ -19,16 +19,19 @@
 //!   modules the bare temp-dir copy can't resolve), it stays `Verdict::Unknown`.
 //! * binary absent → [`Verdict::Unavailable`].
 //!
-//! The audit currently reaches import-free files (a temp-dir copy elaborates
-//! them without `LEAN_PATH`); auditing imported files needs `lake env`
-//! resolution — a documented follow-on.
+//! Import resolution: when a `lakefile.lean`/`lakefile.toml` is found at or
+//! above the file, both the elaboration and the `#print axioms` audit run
+//! under `lake env lean` (cwd = the lake root), which injects the project's
+//! `LEAN_PATH` — so IMPORTED files elaborate and get audited too, not just
+//! import-free ones. (This assumes the project is already built; arghda checks
+//! proofs, it does not run `lake build`.) With no lakefile, it falls back to
+//! bare `lean <file>` (core + import-free files); if `lake` is somehow absent,
+//! it also falls back to bare `lean`.
 //!
 //! Lean modules are dotted (`Mathlib.Data.Nat` ↔ `Mathlib/Data/Nat.lean`),
 //! so [`crate::graph::module_name_of`] is reused. Imports are top-level
 //! `import Mod` lines; Lean `open` is a *namespace* directive, not a
-//! dependency edge, so it is deliberately ignored. Project-wide module
-//! resolution (via `lake env` / `LEAN_PATH`) is a documented follow-on;
-//! this baseline runs `lean <file>` directly (core + import-free files).
+//! dependency edge, so it is deliberately ignored.
 
 use super::{Backend, BackendKind, Outcome, Verdict};
 use crate::graph;
@@ -70,8 +73,11 @@ impl Backend for Lean {
         Some("#print axioms")
     }
 
-    fn check_file(&self, file: &Path, _include_root: &Path) -> Result<Outcome> {
-        let output = Command::new("lean").arg(file).output();
+    fn check_file(&self, file: &Path, include_root: &Path) -> Result<Outcome> {
+        // Under a lake project, run via `lake env lean` so project-local
+        // imports resolve; otherwise bare `lean`.
+        let lake = lake_root(file, include_root);
+        let output = run_lean(file, lake.as_deref());
         match output {
             Ok(out) => {
                 let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
@@ -81,10 +87,10 @@ impl Backend for Lean {
                 // `#print axioms` audit to promote it honestly: Proven if every
                 // declaration depends only on the standard axioms, Postulated
                 // if a non-standard axiom (e.g. `native_decide`'s) sneaks in,
-                // Admitted on sorryAx. If the audit can't run (imports need
-                // lake, no declarations, tool absent) it stays `Unknown`.
+                // Admitted on sorryAx. If the audit can't run (unbuilt imports,
+                // no declarations, tool absent) it stays `Unknown`.
                 if verdict == Verdict::Unknown {
-                    if let Some(audited) = axiom_audit(file) {
+                    if let Some(audited) = axiom_audit(file, lake.as_deref()) {
                         verdict = audited;
                     }
                 }
@@ -268,12 +274,15 @@ fn classify_axioms(output: &str) -> Verdict {
 }
 
 /// Run a `#print axioms` audit on `file`'s declarations. Copies the source
-/// into a fresh temp dir, appends `#print axioms <name>` per declaration,
-/// and runs `lean`. Returns the classified verdict, or `None` when the audit
-/// can't be trusted — no declarations, `lean` absent, or the copy fails to
-/// elaborate (e.g. it imports modules that need `lake env`/`LEAN_PATH`, which
-/// a bare temp dir lacks). `None` ⇒ the caller keeps the honest `Unknown`.
-fn axiom_audit(file: &Path) -> Option<Verdict> {
+/// into a fresh temp dir, appends `#print axioms <name>` per declaration, and
+/// elaborates it — under `lake env lean` when `lake_root` is `Some` (so the
+/// project's `LEAN_PATH` resolves imported modules), else bare `lean`. Because
+/// `LEAN_PATH` entries are absolute, the audit copy can stay in a clean temp
+/// dir even for imported files. Returns the classified verdict, or `None` when
+/// the audit can't be trusted — no declarations, `lean` absent, or the copy
+/// fails to elaborate (e.g. an import whose `.olean` isn't built). `None` ⇒
+/// the caller keeps the honest `Unknown`.
+fn axiom_audit(file: &Path, lake_root: Option<&Path>) -> Option<Verdict> {
     let src = fs::read_to_string(file).ok()?;
     let names = decl_names(&src);
     if names.is_empty() {
@@ -295,9 +304,9 @@ fn axiom_audit(file: &Path) -> Option<Verdict> {
     let audit_file = dir.join("Audit.lean");
 
     let verdict = match fs::write(&audit_file, &body) {
-        Ok(()) => match Command::new("lean").arg(&audit_file).output() {
+        Ok(()) => match run_lean(&audit_file, lake_root) {
             // Only trust the audit if the copy elaborated cleanly; otherwise
-            // (imports unresolved in the temp dir, etc.) stay Unknown.
+            // (an import whose .olean isn't built, etc.) stay Unknown.
             Ok(out) if out.status.success() => {
                 let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
                 combined.push_str(&String::from_utf8_lossy(&out.stderr));
@@ -310,6 +319,39 @@ fn axiom_audit(file: &Path) -> Option<Verdict> {
 
     let _ = fs::remove_dir_all(&dir);
     verdict
+}
+
+/// Find the lake project root at or above `file` (or `include_root`): the
+/// nearest ancestor directory containing a `lakefile.lean` or `lakefile.toml`.
+/// `None` ⇒ not a lake project (bare-`lean` fallback).
+fn lake_root(file: &Path, include_root: &Path) -> Option<PathBuf> {
+    let start = file.parent().unwrap_or(include_root);
+    for dir in start.ancestors().chain(include_root.ancestors()) {
+        if dir.join("lakefile.lean").is_file() || dir.join("lakefile.toml").is_file() {
+            return Some(dir.to_path_buf());
+        }
+    }
+    None
+}
+
+/// Elaborate `file` with Lean. Under a lake project (`lake_root` = `Some`), run
+/// `lake env lean <file>` with cwd = the lake root so `LEAN_PATH` resolves
+/// project imports; if `lake` itself is absent, fall back to bare `lean`. With
+/// no lake project, run bare `lean <file>`.
+fn run_lean(file: &Path, lake_root: Option<&Path>) -> std::io::Result<std::process::Output> {
+    if let Some(root) = lake_root {
+        match Command::new("lake")
+            .arg("env")
+            .arg("lean")
+            .arg(file)
+            .current_dir(root)
+            .output()
+        {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {} // fall back to bare lean
+            other => return other,
+        }
+    }
+    Command::new("lean").arg(file).output()
 }
 
 #[cfg(test)]
@@ -406,6 +448,24 @@ example : True := trivial\n\
             Verdict::Admitted
         );
         assert_eq!(lean_verdict("error: type mismatch", false), Verdict::Error);
+    }
+
+    #[test]
+    fn lake_root_found_at_ancestor() {
+        // A file two dirs below a lakefile resolves to the lake root; a tree
+        // with no lakefile resolves to None (bare-lean fallback).
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("lakefile.toml"), "name = \"demo\"\n").unwrap();
+        std::fs::create_dir_all(root.join("Demo")).unwrap();
+        let deep = root.join("Demo/Basic.lean");
+        std::fs::write(&deep, "def x : Nat := 0\n").unwrap();
+        assert_eq!(lake_root(&deep, root).as_deref(), Some(root));
+
+        let bare = tempfile::tempdir().unwrap();
+        let f = bare.path().join("T.lean");
+        std::fs::write(&f, "theorem t : True := trivial\n").unwrap();
+        assert_eq!(lake_root(&f, bare.path()), None);
     }
 
     #[test]
