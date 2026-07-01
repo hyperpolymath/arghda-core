@@ -11,12 +11,12 @@ status = "active"  # active | paused | archived
 
 [project-context]
 name = "arghda-core"
-purpose = "Lightweight proof-workspace manager for Agda — the language-agnostic engine half of arghda. A four-state triage workspace (inbox/working/proven/rejected) as file moves, a lint pack targeting the silent-failure class, a first-class import-graph DAG, and a JSON + event-stream contract a visual layer (arghda-studio) consumes. It never proves anything; Agda does."
-completion-percentage = 85
+purpose = "Multi-backend proof-workspace manager — the 'Flying Logic for provers/solvers' engine. A four-state triage workspace (inbox/working/proven/rejected) as file moves, per-backend lint packs targeting the silent-failure class, a backend-parametric import-graph DAG, a demote-only status-propagating reasoning graph, and a JSON + event-stream contract a visual layer (arghda-studio) consumes. Six backends across both interaction models (Agda, Cubical-Agda, Idris2, Lean4 assistants; Z3, CVC5 solvers). It never proves anything itself; the tools do."
+completion-percentage = 92
 
 [position]
 phase = "implementation"   # design | implementation | testing | maintenance | archived
-maturity = "alpha"         # experimental | alpha | beta | production | lts
+maturity = "beta"          # experimental | alpha | beta | production | lts
 
 [route-to-mvp]
 milestones = [
@@ -47,7 +47,7 @@ milestones = [
   { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 90 },
   { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 100 },
   { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 85 },
-  { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 0 },
+  { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 70 },
   { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 0 },
   { name = "M9: Isabelle adapter (--heavy; dogfood tropical-resource-typing .thy)", completion = 0 },
   { name = "M10: Mizar adapter (detect-only first; highest uncertainty)", completion = 0 },
@@ -59,6 +59,22 @@ milestones = [
 # are scripted (behind --heavy/--mizar) but not installed this session.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
+#
+# M7 landed 2026-07-01 (70%): the Echidna dispatch seam — completes the
+# engine-spine deliverable (M0-M7 + M11). src/dispatch.rs: `Dispatch { Local,
+# Echidna { base_url } }` + `run(backend, file, include_root) -> Outcome`
+# preserving the SAME Outcome contract on both routes. Local = fully real
+# (delegates to backend.check_file). Echidna = an HONEST STUB: Echidna's
+# orchestrator API is unconfirmed (may not exist), and the seam explicitly does
+# NOT block on it, so rather than invent an unverifiable HTTP contract and risk
+# fabricating a verdict, the Echidna route returns available:false / Unavailable
+# with a clear reason (mirrors cicd-squabbler's "exits EX_UNAVAILABLE rather than
+# fake OK" precedent). Wired via `--dispatch local|echidna[=<url>]` on `check`
+# and `reason --check`. 124 tests (+3 dispatch unit: parse; echidna-never-
+# fabricates; local-delegates). Dogfooded: local z3 unsat→proven-eligible;
+# echidna→backend-unavailable (honest); bogus→clean error. Follow-on (the 30%):
+# the real orchestrator HTTP client, feature-gated, once Echidna's API is
+# confirmed — only Dispatch::run changes (no backend/caller churn).
 #
 # M11 landed 2026-07-01: studio JSON freeze (reason/0.1) + Groove manifest —
 # closes the ONE open v0.1 milestone (Groove service manifest, was 0%). Two
@@ -200,12 +216,12 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "M0-M6 + M11 DONE. The v0.1 spec is now CLOSED (Groove manifest was the last open milestone). Engine-spine deliverable (M0-M7 + M11) is complete bar M7. Six backends + reasoning graph + doctor + groove. Remaining:",
-  "Flying-Logic epic M7: Echidna dispatch seam (feature-gated client, same Outcome) — completes the engine-spine deliverable.",
+  "ENGINE-SPINE DELIVERABLE COMPLETE: M0-M7 + M11 all landed. v0.1 spec closed. Six backends (agda, agda-cubical, idris2, lean4 Assistant; z3, cvc5 Solver) + reasoning graph + doctor + groove + dispatch seam. Remaining work is refinement + the heavy tail:",
+  "M7 follow-on: the real Echidna orchestrator HTTP client (feature-gated), once Echidna's API is confirmed — only Dispatch::run changes.",
   "M6 follow-on: lake-env/LEAN_PATH multi-file resolution; per-decl #print axioms audit to promote Unknown→Proven.",
   "M4 follow-on: .ipkg-declared roots; totality-hole (?name) + per-def `partial` lint.",
   "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs).",
-  "M8-M10 heavy tail (Coq/Rocq, Isabelle, Mizar) — gated on --heavy provisioning.",
+  "M8-M10 heavy tail (Coq/Rocq, Isabelle, Mizar) — gated on --heavy provisioning (Coq via opam ~1hr; Isabelle ~4GB; Mizar niche).",
 ]
 
 [maintenance-status]
@@ -214,11 +230,11 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M11: 88 lib + 33 integration = 121 tests pass. `arghda doctor`/`groove`
-# dogfooded: 6/6 backends runnable; manifest emits + writes /.well-known/groove.
-# All six backends dogfooded via real CLI: agda + agda-cubical + idris2 + lean4
-# (Assistant), z3 + cvc5 (Solver). Dogfooded historically vs echo-types +
-# agda-unused.
+# post-M7: 91 lib + 33 integration = 124 tests pass. doctor/groove/dispatch
+# dogfooded: 6/6 backends runnable; groove writes /.well-known/groove; --dispatch
+# local real, echidna honest-stub. All six backends dogfooded via real CLI: agda
+# + agda-cubical + idris2 + lean4 (Assistant), z3 + cvc5 (Solver). Dogfooded
+# historically vs echo-types + agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]
