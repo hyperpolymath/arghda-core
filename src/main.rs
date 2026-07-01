@@ -4,8 +4,9 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, build_reason, event, run_lints, unused, watcher, Agda, AgdaCubical, Backend,
-    BackendKind, Idris2, Lean, LintRule, RuleConfig, Smt, State, Verdict, Workspace,
+    build_dag, build_reason, event, groove_manifest, run_lints, unused, watcher, Agda, AgdaCubical,
+    Backend, BackendKind, Idris2, Lean, LintRule, Probe, RuleConfig, Smt, State, Verdict,
+    Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -170,6 +171,15 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Emit the Groove service-discovery manifest (`/.well-known/groove`).
+    /// Announces arghda's capabilities (probed backends, CLI commands, and
+    /// the frozen `dag/0.1` + `reason/0.1` schemas) for PanLL discovery.
+    Groove {
+        /// Write the manifest to a file instead of stdout (e.g.
+        /// `<site>/.well-known/groove`).
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -252,16 +262,41 @@ fn main() -> Result<()> {
         } => stale(&workspace, invalidate)?,
         Cmd::Watch { workspace } => watch(&workspace)?,
         Cmd::Doctor { json } => doctor(json)?,
+        Cmd::Groove { output } => groove(output.as_deref())?,
+    }
+    Ok(())
+}
+
+/// Probe every known backend for runnability (shared by `doctor`/`groove`).
+fn probe_all() -> Result<Vec<Probe>> {
+    KNOWN_BACKENDS
+        .iter()
+        .map(|name| backend_for(name).map(|b| b.probe()))
+        .collect()
+}
+
+/// Emit the Groove service-discovery manifest (stdout, or `--output` file).
+fn groove(output: Option<&Path>) -> Result<()> {
+    let manifest = groove_manifest(probe_all()?);
+    let json = serde_json::to_string_pretty(&manifest)?;
+    match output {
+        Some(path) => {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("creating {}", parent.display()))?;
+            }
+            std::fs::write(path, format!("{json}\n"))
+                .with_context(|| format!("writing {}", path.display()))?;
+            println!("wrote Groove manifest to {}", path.display());
+        }
+        None => println!("{json}"),
     }
     Ok(())
 }
 
 /// Probe every known backend and report which are actually runnable.
 fn doctor(json: bool) -> Result<()> {
-    let probes = KNOWN_BACKENDS
-        .iter()
-        .map(|name| backend_for(name).map(|b| b.probe()))
-        .collect::<Result<Vec<_>>>()?;
+    let probes = probe_all()?;
 
     if json {
         let payload = serde_json::json!({ "version": "0.1", "backends": probes });

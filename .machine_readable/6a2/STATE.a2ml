@@ -30,7 +30,7 @@ milestones = [
   { name = "Content-hash invalidation of proven (file-level + transitive-import closure via [proven] include_root)", completion = 100 },
   { name = "Operator config (.arghda/config.toml + --headline-pattern + --config)", completion = 100 },
   { name = "RSR / standards alignment (.machine_readable, README.adoc, EXPLAINME, LICENSE, .well-known)", completion = 100 },
-  { name = "Groove service manifest (/.well-known/groove) for PanLL discovery", completion = 0 },
+  { name = "Groove service manifest (/.well-known/groove) for PanLL discovery", completion = 100 },
 ]
 
 # "Flying Logic for provers/solvers" epic (v0.2+): generalise the Agda-only
@@ -51,7 +51,7 @@ milestones = [
   { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 0 },
   { name = "M9: Isabelle adapter (--heavy; dogfood tropical-resource-typing .thy)", completion = 0 },
   { name = "M10: Mizar adapter (detect-only first; highest uncertainty)", completion = 0 },
-  { name = "M11: studio JSON freeze (reason/0.1) + Groove manifest", completion = 0 },
+  { name = "M11: studio JSON freeze (reason/0.1) + Groove manifest", completion = 100 },
 ]
 # M0 provisioning verified in-container 2026-07-01: agda 2.6.3 (+stdlib v2.3
 # +cubical lib), zig 0.15.2, z3 4.8.12, cvc5 1.2.0, lean 4.13.0 all report
@@ -59,6 +59,22 @@ milestones = [
 # are scripted (behind --heavy/--mizar) but not installed this session.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
+#
+# M11 landed 2026-07-01: studio JSON freeze (reason/0.1) + Groove manifest —
+# closes the ONE open v0.1 milestone (Groove service manifest, was 0%). Two
+# deliverables. (1) Studio JSON freeze: a reason/0.1 JSON CONTRACT test in
+# src/reason/mod.rs pins the top-level (version/dag/nodes/edges/crt_roots) +
+# per-node (id/self_verdict/effective/verdict_evidence/soundness/wired) +
+# per-edge (from/to/junct/kind) keys — a rename now breaks a test (bump the
+# version, don't silently edit). (2) Groove: src/groove.rs `GrooveManifest`
+# (groove 0.1; service/description; capabilities = live backend probes +
+# commands + frozen schemas dag/0.1+reason/0.1). `arghda groove [--output
+# <path>]` emits it (stdout, or writes a `/.well-known/groove` file, creating
+# parent dirs). arghda-core is a CLI so it EMITS the manifest; serving it over
+# HTTP is the host's (PanLL's) job — honest. Backends probed live so the
+# manifest reflects this machine. 121 tests (88 lib + 33 integration; +1 groove
+# unit +1 reason-contract-freeze unit). Dogfooded: `arghda groove` → all 6
+# backends runnable, schemas 0.1; `--output` wrote /.well-known/groove.
 #
 # M6 landed 2026-07-01 (85%): the Lean4 backend — sixth backend. src/prover/
 # lean.rs: `lean <file>` elaboration. The honesty subtlety Lean forces: a green
@@ -184,10 +200,9 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "M0-M6 DONE. SIX backends (agda, agda-cubical, idris2, lean4 Assistant; z3, cvc5 Solver) + reasoning graph + doctor. Engine spine essentially complete. Next:",
-  "Flying-Logic epic M11: studio JSON freeze (reason/0.1) + Groove /.well-known/groove manifest (the one open v0.1 milestone; `arghda doctor` output feeds the manifest).",
-  "Flying-Logic epic M7: Echidna dispatch seam (feature-gated client, same Outcome).",
-  "M6 follow-on (15%): lake-env/LEAN_PATH multi-file resolution; per-decl #print axioms audit to promote Unknown→Proven.",
+  "M0-M6 + M11 DONE. The v0.1 spec is now CLOSED (Groove manifest was the last open milestone). Engine-spine deliverable (M0-M7 + M11) is complete bar M7. Six backends + reasoning graph + doctor + groove. Remaining:",
+  "Flying-Logic epic M7: Echidna dispatch seam (feature-gated client, same Outcome) — completes the engine-spine deliverable.",
+  "M6 follow-on: lake-env/LEAN_PATH multi-file resolution; per-decl #print axioms audit to promote Unknown→Proven.",
   "M4 follow-on: .ipkg-declared roots; totality-hole (?name) + per-def `partial` lint.",
   "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs).",
   "M8-M10 heavy tail (Coq/Rocq, Isabelle, Mizar) — gated on --heavy provisioning.",
@@ -199,10 +214,11 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M6: 86 lib + 33 integration = 119 tests pass. `arghda doctor` dogfooded:
-# 6/6 backends runnable. All six dogfooded via real CLI: agda + agda-cubical +
-# idris2 + lean4 (Assistant), z3 + cvc5 (Solver). Dogfooded historically against
-# echo-types + agda-unused.
+# post-M11: 88 lib + 33 integration = 121 tests pass. `arghda doctor`/`groove`
+# dogfooded: 6/6 backends runnable; manifest emits + writes /.well-known/groove.
+# All six backends dogfooded via real CLI: agda + agda-cubical + idris2 + lean4
+# (Assistant), z3 + cvc5 (Solver). Dogfooded historically vs echo-types +
+# agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]
