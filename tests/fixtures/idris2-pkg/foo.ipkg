@@ -1,0 +1,5 @@
+package foo
+-- the executable entry module is App, not Main
+main = App
+executable = foo
+depends = base
