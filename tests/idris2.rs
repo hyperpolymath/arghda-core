@@ -20,6 +20,14 @@ fn idris2_fixture() -> PathBuf {
     p
 }
 
+fn idris2_pkg_fixture() -> PathBuf {
+    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.push("tests");
+    p.push("fixtures");
+    p.push("idris2-pkg");
+    p
+}
+
 /// The graph path needs no lint rules; a typed empty pack.
 fn no_rules() -> Vec<Box<dyn LintRule>> {
     Vec::new()
@@ -88,4 +96,38 @@ fn idris2_reason_graph_wires_the_main_cone() {
     assert!(wired("Util"));
     assert!(wired("Data.Helper"));
     assert!(!wired("Orphan"), "Orphan must be unwired");
+}
+
+#[test]
+fn idris2_ipkg_main_is_discovered_as_a_root() {
+    // The `.ipkg` follow-on: `main = App` (NOT Main.idr) is resolved to
+    // App.idr as the CI root, and the App cone wires from it.
+    let root = idris2_pkg_fixture();
+    let roots = Idris2.discover_roots(&root);
+    let names: Vec<String> = roots
+        .iter()
+        .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["App.idr".to_string()],
+        "ipkg `main = App` must be discovered (there is no Main.idr)"
+    );
+
+    let dag = build_dag(
+        &root,
+        &roots,
+        &no_rules(),
+        DEFAULT_HEADLINE_PATTERN,
+        &Idris2,
+    )
+    .unwrap();
+    let doc = build_reason(dag, &Idris2, &BTreeMap::new(), &BTreeSet::new());
+    assert_eq!(doc.crt_roots, vec!["App".to_string()]);
+    let wired = |id: &str| doc.nodes.iter().find(|n| n.id == id).unwrap().wired;
+    assert!(wired("App"));
+    assert!(
+        wired("Helper"),
+        "Helper is imported by the ipkg-declared main"
+    );
 }

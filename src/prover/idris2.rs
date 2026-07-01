@@ -126,23 +126,26 @@ impl Backend for Idris2 {
     }
 
     fn discover_roots(&self, include_root: &Path) -> Vec<PathBuf> {
-        // Idris2 has no `All.agda`-style convention; the executable entry is
-        // `Main.idr`. (`.ipkg`-declared `main`/`modules` roots are a
-        // documented follow-on.)
+        // Two conventions, unioned:
+        //   1. `.ipkg`-declared `main = <Module>` — the package's executable
+        //      entry, resolved to its `.idr` file (needn't be `Main.idr`).
+        //   2. Any `Main.idr` — the bare-tree fallback.
         let mut roots = Vec::new();
         for entry in WalkDir::new(include_root)
             .into_iter()
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("idr") {
-                continue;
-            }
-            if path.file_name().and_then(|s| s.to_str()) == Some("Main.idr") {
-                roots.push(path.to_path_buf());
+            match path.extension().and_then(|s| s.to_str()) {
+                Some("ipkg") => roots.extend(ipkg_main_roots(path, include_root)),
+                Some("idr") if path.file_name().and_then(|s| s.to_str()) == Some("Main.idr") => {
+                    roots.push(path.to_path_buf());
+                }
+                _ => {}
             }
         }
         roots.sort();
+        roots.dedup();
         roots
     }
 
@@ -159,6 +162,56 @@ fn tail(s: &str, n: usize) -> String {
     let lines: Vec<&str> = s.lines().collect();
     let start = lines.len().saturating_sub(n);
     lines[start..].join("\n")
+}
+
+/// Resolve an Idris2 `.ipkg`'s `main = <Module>` declaration(s) to the
+/// module's `.idr` file, honouring an optional `sourcedir`. Returns the
+/// resolved files that exist (first matching candidate base per `main`).
+/// Non-`main` fields are ignored; `--` comments are stripped.
+fn ipkg_main_roots(ipkg: &Path, include_root: &Path) -> Vec<PathBuf> {
+    let Ok(contents) = fs::read_to_string(ipkg) else {
+        return Vec::new();
+    };
+    let mut mains: Vec<String> = Vec::new();
+    let mut sourcedir: Option<String> = None;
+    for line in contents.lines() {
+        let code = line.split("--").next().unwrap_or(line);
+        if let Some((key, value)) = code.split_once('=') {
+            match key.trim() {
+                "main" => mains.push(value.trim().to_string()),
+                "sourcedir" | "source-dir" => {
+                    sourcedir = Some(value.trim().trim_matches('"').trim().to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let ipkg_dir = ipkg.parent().unwrap_or(include_root);
+    // Candidate source roots to resolve the main module against, in order.
+    let mut bases: Vec<PathBuf> = Vec::new();
+    if let Some(sd) = &sourcedir {
+        bases.push(ipkg_dir.join(sd));
+        bases.push(include_root.join(sd));
+    }
+    bases.push(ipkg_dir.to_path_buf());
+    bases.push(include_root.to_path_buf());
+
+    let mut out = Vec::new();
+    for m in &mains {
+        for base in &bases {
+            let mut p = base.clone();
+            for part in m.split('.') {
+                p.push(part);
+            }
+            p.set_extension("idr");
+            if p.is_file() {
+                out.push(p);
+                break; // first existing candidate wins
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -216,5 +269,34 @@ mod tests {
             assert!(!out.ok);
             assert!(out.exit_code.is_none());
         }
+    }
+
+    #[test]
+    fn ipkg_main_resolves_via_sourcedir_and_strips_comments() {
+        // main declared with a dotted module under a quoted sourcedir, plus a
+        // `--` comment and a distractor field — only the real main resolves.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("src/Cli")).unwrap();
+        std::fs::write(root.join("src/Cli/App.idr"), "module Cli.App\n").unwrap();
+        std::fs::write(
+            root.join("thing.ipkg"),
+            "package thing\n\
+             -- main = NotThis   (this line is a comment)\n\
+             sourcedir = \"src\"\n\
+             main = Cli.App\n\
+             executable = thing\n",
+        )
+        .unwrap();
+        let roots = ipkg_main_roots(&root.join("thing.ipkg"), root);
+        assert_eq!(roots, vec![root.join("src/Cli/App.idr")]);
+    }
+
+    #[test]
+    fn ipkg_with_no_resolvable_main_yields_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("x.ipkg"), "package x\nmain = Nope\n").unwrap();
+        assert!(ipkg_main_roots(&root.join("x.ipkg"), root).is_empty());
     }
 }
