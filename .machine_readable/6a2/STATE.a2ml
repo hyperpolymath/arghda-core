@@ -46,7 +46,7 @@ milestones = [
   { name = "M3: Flying-Logic reasoning graph (src/reason: And|Or juncts, demote-only cycle-safe Verdict propagation, additive studio JSON)", completion = 100 },
   { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 90 },
   { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 100 },
-  { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 0 },
+  { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 85 },
   { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 0 },
   { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 0 },
   { name = "M9: Isabelle adapter (--heavy; dogfood tropical-resource-typing .thy)", completion = 0 },
@@ -59,6 +59,28 @@ milestones = [
 # are scripted (behind --heavy/--mizar) but not installed this session.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
+#
+# M6 landed 2026-07-01 (85%): the Lean4 backend — sixth backend. src/prover/
+# lean.rs: `lean <file>` elaboration. The honesty subtlety Lean forces: a green
+# exit does NOT mean proven (sorry is only a warning; exit 0). So the verdict is
+# NOT exit-code-only like agda/idris2 — it PARSES output: exit≠0→Error; exit 0 +
+# "sorry" in output→Admitted; exit 0 clean→Unknown (elaborated but NOT audited —
+# arghda refuses to claim Proven without a #print axioms audit; matches the plan's
+# "honest Unknown when the audit is absent"). Dotted modules reuse module_name_of;
+# .lean module_to_path; import parser (top-level `import Mod`; `open` is a
+# namespace directive, NOT an edge — deliberately ignored); Main.lean roots.
+# src/lint/lean.rs: LeanEscapeHatch (sorry/admit/native_decide/unsafe) named
+# "escape-hatch". Wired via --backend lean4. Ground-truthed vs Lean 4.13.0.
+# HONESTY FIX exposed by M6 (applies to ALL backends): the `check` command's
+# verdict was collapsing to proven-eligible/rejected, mislabelling a clean Lean
+# file "rejected" and an SMT `sat` "rejected". Now reports the real verdict word
+# (proven-eligible/refuted/unknown/admitted/postulated/rejected); the human line
+# drops the assistant-centric ok/FAILED. 119 tests (86 lib + 33 integration;
+# +5 lean unit +4 lean-escape unit +2 lean integration). Dogfooded REAL lean:
+# clean proof→unknown, sorry→admitted; re-dogfooded z3 sat→refuted, unsat→
+# proven-eligible, agda→proven-eligible; doctor now 6 backends. Follow-ons (the
+# 15%): lake-env/LEAN_PATH for project-wide multi-file resolution; the per-decl
+# #print axioms audit to promote Unknown→Proven.
 #
 # M0 COMPLETED 2026-07-01: the `arghda doctor` subcommand lands, closing the
 # last M0 gap. Probes every known backend by running `<command> --version`;
@@ -162,10 +184,10 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "M0 + M1 + M2 + M3 + M4 + M5 DONE. Five backends across both interaction models (agda, agda-cubical, idris2 Assistant; z3, cvc5 Solver) + reasoning graph + doctor. Engine spine core complete. Next:",
-  "Flying-Logic epic M6: Lean4 adapter (lake build + #print axioms audit → honest Unknown soundness when the audit is absent). Lean 4.13.0 provisioned. Sixth backend.",
-  "Flying-Logic epic M11: studio JSON freeze (reason/0.1) + Groove /.well-known/groove manifest (the one open v0.1 milestone; `arghda doctor` output feeds it).",
+  "M0-M6 DONE. SIX backends (agda, agda-cubical, idris2, lean4 Assistant; z3, cvc5 Solver) + reasoning graph + doctor. Engine spine essentially complete. Next:",
+  "Flying-Logic epic M11: studio JSON freeze (reason/0.1) + Groove /.well-known/groove manifest (the one open v0.1 milestone; `arghda doctor` output feeds the manifest).",
   "Flying-Logic epic M7: Echidna dispatch seam (feature-gated client, same Outcome).",
+  "M6 follow-on (15%): lake-env/LEAN_PATH multi-file resolution; per-decl #print axioms audit to promote Unknown→Proven.",
   "M4 follow-on: .ipkg-declared roots; totality-hole (?name) + per-def `partial` lint.",
   "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs).",
   "M8-M10 heavy tail (Coq/Rocq, Isabelle, Mizar) — gated on --heavy provisioning.",
@@ -177,10 +199,10 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M0-doctor: 80 lib + 28 integration = 108 tests pass. `arghda doctor`
-# dogfooded: 5/5 backends runnable. All five backends dogfooded via real CLI:
-# agda + agda-cubical + idris2 (Assistant), z3 + cvc5 (Solver). Dogfooded
-# historically against echo-types + agda-unused.
+# post-M6: 86 lib + 33 integration = 119 tests pass. `arghda doctor` dogfooded:
+# 6/6 backends runnable. All six dogfooded via real CLI: agda + agda-cubical +
+# idris2 + lean4 (Assistant), z3 + cvc5 (Solver). Dogfooded historically against
+# echo-types + agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]
