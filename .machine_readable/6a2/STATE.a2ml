@@ -41,7 +41,7 @@ milestones = [
 [route-to-flying-logic]
 milestones = [
   { name = "M0: provision-provers.sh (pinned, honest --version verification) + `just provision/doctor` recipes", completion = 80 },
-  { name = "M1: Backend trait (Assistant|Solver kinds; Outcome/Verdict); agda.rs -> prover/agda.rs; graph/dag take &dyn Backend (pure refactor, 50 tests stay green)", completion = 0 },
+  { name = "M1: Backend trait (Assistant|Solver kinds; Outcome/Verdict); agda.rs -> prover/agda.rs; graph/dag take &dyn Backend (pure refactor, 50 tests stay green)", completion = 100 },
   { name = "M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island)", completion = 0 },
   { name = "M3: Flying-Logic reasoning graph (src/reason: And|Or juncts, demote-only cycle-safe Verdict propagation, additive studio JSON)", completion = 0 },
   { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 0 },
@@ -59,6 +59,21 @@ milestones = [
 # are scripted (behind --heavy/--mizar) but not installed this session.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
+#
+# M1 landed 2026-07-01 as the promised PURE REFACTOR — behaviour unchanged,
+# oracle held: the 64 pre-existing tests (50 lib + 14 integration) all stay
+# green, +2 new Agda-backend tests = 66 passing; clippy -D warnings + fmt +
+# SPDX all clean; `dag` JSON output byte-compatible. New src/prover/ module:
+# Backend trait (name/kind/extensions/safe_mode/check_file/module_name_of/
+# module_to_path/direct_imports/discover_roots/lint_rules), BackendKind
+# {Assistant|Solver}, Verdict {Proven|Refuted|Unknown|Admitted|Postulated|
+# Error|Unavailable}, Outcome (superset of the old AgdaOutcome + kind +
+# verdict). src/agda.rs -> src/prover/agda.rs (Agda = first impl; owns the
+# shell-out, delegates parsing to graph:: free fns + lint pack to lint::).
+# graph::build + dag::build + main's scan/check/dag/resolve_roots_and_rules
+# all consume &dyn Backend; the cycle-safe reachability walk is untouched and
+# inherited free. Agda verdict is exit-code-only (0 -> Proven, ran-nonzero ->
+# Error, absent -> Unavailable); Admitted/Postulated stay lint-derived amber.
 
 [blockers-and-issues]
 # No active blockers. v0.1 lint set + DAG schema (arghda-spec.adoc) are
@@ -72,21 +87,24 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "Flying-Logic epic M1: introduce the Backend trait (Assistant|Solver) and move agda.rs to prover/agda.rs as a PURE REFACTOR — the 50 existing tests are the oracle, they must stay green with no behaviour change. This is the keystone everything else rides on.",
-  "Flying-Logic epic M3: src/reason reasoning graph (And|Or juncts + demote-only cycle-safe Verdict propagation) — independent of new backends, lands the headline capability early.",
+  "M1 keystone DONE (Backend trait, pure refactor, 66 tests green). Next, in parallel now that the trait is stable:",
+  "Flying-Logic epic M3: src/reason reasoning graph (And|Or juncts + demote-only cycle-safe Verdict propagation over the common Verdict) — independent of new backends, lands the headline capability early.",
+  "Flying-Logic epic M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; believe_me/assert_total/%partial escape-hatches) — Idris2 v0.7.0 is provisioned.",
+  "Flying-Logic epic M5: SMT solver backends (Z3, CVC5) — the Solver kind; SMT-LIB2 -> sat(Refuted)/unsat(Proven)/unknown(Unknown). Both binaries are provisioned.",
+  "Flying-Logic epic M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island; cross-flag import edges forbidden).",
   "Finish M0: add the `arghda doctor` Rust subcommand and repoint `just doctor` at it (interim shells provision-provers.sh --verify-only).",
-  "Transitive-import closure hashing landed; follow-up: expose it as a --include-root CLI flag on promote/stale.",
   "Serve /.well-known/groove for PanLL discovery (Groove protocol) — folds into M11.",
 ]
 
 [maintenance-status]
-last-run-utc = "2026-06-20"
+last-run-utc = "2026-07-01"
 last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
-# `just check` (fmt-check + clippy -D warnings + build + test) green; ~50 lib
-# tests + integration suites pass. Dogfooded against echo-types + a live
-# agda-unused build.
+# `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
+# post-M1: 52 lib + 14 integration = 66 tests pass. `dag`/`check` dogfooded
+# via real CLI runs (dag JSON byte-compatible; check ran a real agda typecheck
+# -> proven-eligible). Dogfooded historically against echo-types + agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]
