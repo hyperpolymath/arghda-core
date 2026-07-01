@@ -11,7 +11,7 @@ status = "active"  # active | paused | archived
 
 [project-context]
 name = "arghda-core"
-purpose = "Multi-backend proof-workspace manager — the 'Flying Logic for provers/solvers' engine. A four-state triage workspace (inbox/working/proven/rejected) as file moves, per-backend lint packs targeting the silent-failure class, a backend-parametric import-graph DAG, a demote-only status-propagating reasoning graph, and a JSON + event-stream contract a visual layer (arghda-studio) consumes. Six backends across both interaction models (Agda, Cubical-Agda, Idris2, Lean4 assistants; Z3, CVC5 solvers). It never proves anything itself; the tools do."
+purpose = "Multi-backend proof-workspace manager — the 'Flying Logic for provers/solvers' engine. A four-state triage workspace (inbox/working/proven/rejected) as file moves, per-backend lint packs targeting the silent-failure class, a backend-parametric import-graph DAG, a demote-only status-propagating reasoning graph, and a JSON + event-stream contract a visual layer (arghda-studio) consumes. Seven backends across both interaction models (Agda, Cubical-Agda, Idris2, Lean4, Coq/Rocq assistants; Z3, CVC5 solvers). It never proves anything itself; the tools do."
 completion-percentage = 92
 
 [position]
@@ -48,15 +48,18 @@ milestones = [
   { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 100 },
   { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 92 },
   { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 70 },
-  { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 0 },
+  { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 90 },
   { name = "M9: Isabelle adapter (--heavy; dogfood tropical-resource-typing .thy)", completion = 0 },
   { name = "M10: Mizar adapter (detect-only first; highest uncertainty)", completion = 0 },
   { name = "M11: studio JSON freeze (reason/0.1) + Groove manifest", completion = 100 },
 ]
 # M0 provisioning verified in-container 2026-07-01: agda 2.6.3 (+stdlib v2.3
 # +cubical lib), zig 0.15.2, z3 4.8.12, cvc5 1.2.0, lean 4.13.0 all report
-# real --version. idris2 v0.7.0 builds via chez bootstrap. Coq/Isabelle/Mizar
-# are scripted (behind --heavy/--mizar) but not installed this session.
+# real --version. idris2 v0.7.0 builds via chez bootstrap. COQ NOW INSTALLED
+# (2026-07-01, heavy-tail foundation): opam 2.1.5 via apt → `opam install
+# coq.8.18.0` → coqc reports real --version; symlinked to /usr/local/bin/coqc
+# so `arghda doctor` probes it ([OK] coq assistant). Isabelle/Mizar remain
+# scripted (behind --heavy/--mizar) but not installed this session.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
 #
@@ -115,6 +118,36 @@ milestones = [
 # the cone, stale demotes). Dogfooded: fresh proven leaf → effective proven, un-
 # proven root → unknown; edit the proven file on disk → Good demoted to unknown
 # with the stale evidence string. M3 base was 100%; this is pure additive refinement.
+#
+# M8 landed 2026-07-01 (90%, first heavy-tail backend): the Coq/Rocq adapter.
+# Foundation-first — provisioned coqc 8.18.0 (opam) BEFORE the adapter, then
+# built + dogfooded against the REAL tool. src/prover/rocq.rs (`Coq`): Assistant
+# kind, extensions [v], command `coqc`. Verdict logic, ground-truthed vs Coq
+# 8.18.0: exit≠0 → Error; exit 0 + `Admitted`/`admit` → Admitted; exit 0 +
+# genuine postulate → Postulated; exit 0 clean → Proven (coqc kernel-checks
+# every `Qed` at compile, so this is honest — stronger than Lean's need for a
+# #print axioms audit). "Genuine postulate" = `count_genuine_postulates`, the
+# Section-aware classifier PORTED from panic-attack's
+# `count_rocq_unverified_postulates`: Section-scoped Variable/Hypothesis/
+# Parameter discharge at End; module-level Parameter of carrier/decidability/
+# non-Prop-function type are abstractions; Prop-valued Axiom/Parameter counted.
+# check_file redirects the .vo to a temp DIR keeping the source stem (coqc `-o`
+# insists target basename == source; a REAL-coqc dogfood caught my first
+# attempt renaming it). Imports: `Require [Import|Export]` + `From P Require …`
+# (bare Import/Export = namespace directive, not an edge, like Lean `open`).
+# Roots: `All.v` aggregator convention (mirrors Agda). Lint: src/lint/coq.rs
+# `CoqEscapeHatch` (warn, shared name `escape-hatch`) flags Admitted/admit/
+# Axiom/Conjecture (Parameter left to the backend classifier). Wired: backend_for
+# "coq" + KNOWN_BACKENDS + all four `--backend` help strings + about line.
+# 146 tests (+7 rocq unit +5 coq lint unit +3 coq integration; graph tests
+# hermetic — text only, run tool-less). DOGFOODED vs real coqc 8.18.0: check
+# → Clean=proven / Admits=admitted / Postulate=postulated / Broken=error;
+# `reason --check --backend coq` reproduces those; import edge All→Base parsed,
+# All.v discovered as crt_root, Base+Util wired, Orphan unwired; `doctor` →
+# [OK] coq assistant 8.18.0. Remaining 10%: `_CoqProject`-driven logical-path
+# resolution + dependency-ordered compilation (a bare single-file coqc reports
+# Error when an uncompiled dependency is Required — documented limitation, same
+# class as Lean's lake-env gap).
 #
 # M7 landed 2026-07-01 (70%): the Echidna dispatch seam — completes the
 # engine-spine deliverable (M0-M7 + M11). src/dispatch.rs: `Dispatch { Local,
@@ -277,7 +310,8 @@ actions = [
   "M6 follow-on: #print axioms audit DONE (import-free files promote honestly); remaining = lake-env/LEAN_PATH so imported files can be checked + audited too.",
   "M4 follow-on: .ipkg-declared roots DONE; remaining = totality-hole (?name) + per-def `partial` lint.",
   "M3 follow-on: DONE — `reason --workspace <ws>` sources real verdicts from a `proven/` state (workspace_verdicts) + demotes stale-proven via the content-hash closure. Refinement follow-ons bucket now complete.",
-  "M8-M10 heavy tail (Coq/Rocq, Isabelle, Mizar) — gated on --heavy provisioning (Coq via opam ~1hr; Isabelle ~4GB; Mizar niche).",
+  "M8 (Coq/Rocq): DONE (90%) — coqc 8.18.0 provisioned + adapter built + dogfooded (proven/admitted/postulated/error) with Section-aware postulate classifier. Remaining: _CoqProject logical paths + dependency-ordered compilation.",
+  "M9-M10 heavy tail (Isabelle, Mizar) — next, foundation-first: Isabelle ~4GB tarball then adapter; Mizar niche/detect-only. Then climb to M6 lake-env, M4 totality lint, M7 Echidna client.",
 ]
 
 [maintenance-status]
@@ -286,13 +320,13 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M3-followon: 96 lib + 34 integration = 130 tests pass. codeql.yml added
-# (code-scanning gate fix). reason --workspace verdicts+staleness dogfooded.
-# Lean #print axioms audit dogfooded. doctor/groove/dispatch
-# dogfooded: 6/6 backends runnable; groove writes /.well-known/groove; --dispatch
-# local real, echidna honest-stub. All six backends dogfooded via real CLI: agda
-# + agda-cubical + idris2 + lean4 (Assistant), z3 + cvc5 (Solver). Dogfooded
-# historically vs echo-types + agda-unused.
+# post-M8: 108 lib + 38 integration = 146 tests pass. codeql.yml added
+# (code-scanning gate fix). M8 Coq adapter dogfooded vs real coqc 8.18.0
+# (proven/admitted/postulated/error; reason --check; import edges; roots; wired;
+# doctor [OK] coq). reason --workspace verdicts+staleness dogfooded. Lean
+# #print axioms audit dogfooded. doctor/groove/dispatch dogfooded. SEVEN
+# backends now: agda + agda-cubical + idris2 + lean4 + coq (Assistant), z3 +
+# cvc5 (Solver). Dogfooded historically vs echo-types + agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]
