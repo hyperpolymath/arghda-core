@@ -29,12 +29,14 @@ use std::process::Command;
 
 pub mod agda;
 pub mod idris2;
+pub mod isabelle;
 pub mod lean;
 pub mod rocq;
 pub mod smt;
 
 pub use agda::{Agda, AgdaCubical};
 pub use idris2::Idris2;
+pub use isabelle::Isabelle;
 pub use lean::Lean;
 pub use rocq::Coq;
 pub use smt::Smt;
@@ -129,7 +131,13 @@ pub struct Probe {
 /// `false` only when the binary is absent / cannot be executed (never a
 /// guess). `detail` is the first output line, or the reason it failed.
 fn probe_tool(name: &str, kind: BackendKind, cmd: &str) -> Probe {
-    match Command::new(cmd).arg("--version").output() {
+    probe_tool_arg(name, kind, cmd, "--version")
+}
+
+/// As [`probe_tool`], but with an explicit version-query argument — some
+/// tools use a subcommand (`isabelle version`) rather than `--version`.
+pub(crate) fn probe_tool_arg(name: &str, kind: BackendKind, cmd: &str, version_arg: &str) -> Probe {
+    match Command::new(cmd).arg(version_arg).output() {
         Ok(out) => {
             let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
             combined.push_str(&String::from_utf8_lossy(&out.stderr));

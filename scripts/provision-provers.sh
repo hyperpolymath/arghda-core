@@ -35,7 +35,7 @@ IDRIS2_TAG="v0.7.0"                       # standards/a2ml CI pin
 LEAN_VER="v4.13.0"                        # tropical-resource-typing lean-toolchain
 CVC5_VER="1.2.0"                          # cvc5 static-binary release
 COQ_VER="8.18.0"                          # opam (with --heavy)
-ISABELLE_VER="Isabelle2024"               # TUM tarball (with --heavy)
+ISABELLE_VER="Isabelle2025"               # TUM tarball (with --heavy)
 
 STDLIB_DIR=/opt/agda-stdlib
 CUBICAL_DIR=/opt/agda-cubical
@@ -203,8 +203,11 @@ install_coq() {
 
 install_isabelle() {
   have isabelle && { log "isabelle present"; return; }
-  log "installing ${ISABELLE_VER} (heavy, ~4 GB)…"
-  local url="https://isabelle.in.tum.de/dist/${ISABELLE_VER}_linux.tar.gz"
+  log "installing ${ISABELLE_VER} (heavy, ~1.1 GB download, HOL heap ships prebuilt)…"
+  # Only the *current* release lives under /dist/; older ones move to the
+  # archived /website-<VER>/dist/ path (the /dist/ form 404s). The archived
+  # path is stable and works for the current release too, so use it uniformly.
+  local url="https://isabelle.in.tum.de/website-${ISABELLE_VER}/dist/${ISABELLE_VER}_linux.tar.gz"
   if curl -fsSL "$url" -o /tmp/isabelle.tar.gz 2>/dev/null && [ -s /tmp/isabelle.tar.gz ]; then
     tar -xzf /tmp/isabelle.tar.gz -C /opt \
       && ln -sf "/opt/${ISABELLE_VER}/bin/isabelle" /usr/local/bin/isabelle \

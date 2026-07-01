@@ -1,0 +1,4 @@
+session "Demo" = "HOL" +
+  options [document = false]
+  theories
+    All
