@@ -28,9 +28,11 @@ use std::path::{Path, PathBuf};
 
 pub mod agda;
 pub mod idris2;
+pub mod smt;
 
 pub use agda::Agda;
 pub use idris2::Idris2;
+pub use smt::Smt;
 
 /// The two backend interaction models.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
