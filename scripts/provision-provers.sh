@@ -36,6 +36,7 @@ LEAN_VER="v4.13.0"                        # tropical-resource-typing lean-toolch
 CVC5_VER="1.2.0"                          # cvc5 static-binary release
 COQ_VER="8.18.0"                          # opam (with --heavy)
 ISABELLE_VER="Isabelle2025"               # TUM tarball (with --heavy)
+MIZAR_TAR="mizar-8.1.15_5.94.1493-i386-linux.tar"  # mizar.uwb.edu.pl (--mizar)
 
 STDLIB_DIR=/opt/agda-stdlib
 CUBICAL_DIR=/opt/agda-cubical
@@ -218,8 +219,29 @@ install_isabelle() {
 }
 
 install_mizar() {
-  have mizar && { log "mizar present"; return; }
-  warn "mizar not auto-installed: distribution is manual (mizar.org). Flagged as UNKNOWN."
+  command -v verifier >/dev/null 2>&1 && { log "mizar (verifier) present"; return; }
+  # mizar.org (→ mizar.uwb.edu.pl) ships a statically-linked i386 tarball that
+  # runs on x86_64 with no 32-bit libs. Outer tar → mizbin/mizshare/mizdoc
+  # .tar.gz; binaries + the MML land flat under /opt/mizar. MIZFILES must point
+  # there at runtime (verifier/accom read the MML from it).
+  local base="http://mizar.uwb.edu.pl/~softadm/pub/system/i386-linux"
+  local tar="${MIZAR_TAR}"
+  log "installing mizar ${tar} (i386 static, ~55 MB)…"
+  if curl -fSL -m 300 "${base}/${tar}" -o /tmp/mizar.tar 2>/dev/null; then
+    mkdir -p /opt/mizar && tar -xf /tmp/mizar.tar -C /opt/mizar 2>/dev/null || true
+    for inner in mizbin.tar.gz mizshare.tar.gz; do
+      [ -f "/opt/mizar/${inner}" ] && tar -xzf "/opt/mizar/${inner}" -C /opt/mizar 2>/dev/null
+    done
+    ln -sf /opt/mizar/verifier /usr/local/bin/verifier
+    ln -sf /opt/mizar/accom /usr/local/bin/accom
+    if command -v verifier >/dev/null 2>&1; then
+      log "mizar installed; set MIZFILES=/opt/mizar to run checks"
+    else
+      warn "mizar unpack produced no verifier binary"
+    fi
+  else
+    warn "mizar download failed: ${base}/${tar}"
+  fi
 }
 
 # =============================================================================
@@ -252,6 +274,7 @@ run_doctor() {
   verify "zig"      zig version
   verify "coqc"     coqc --version
   verify "isabelle" isabelle version
+  verify "mizar"    verifier -v
   [ -f "${CUBICAL_DIR}/cubical.agda-lib" ] \
     && REPORT+=("OK      | cubical-lib | ${CUBICAL_DIR}") \
     || REPORT+=("MISSING | cubical-lib | (flag --cubical still works without it)")
