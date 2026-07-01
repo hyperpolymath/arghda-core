@@ -44,7 +44,7 @@ milestones = [
   { name = "M1: Backend trait (Assistant|Solver kinds; Outcome/Verdict); agda.rs -> prover/agda.rs; graph/dag take &dyn Backend (pure refactor, 50 tests stay green)", completion = 100 },
   { name = "M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island)", completion = 0 },
   { name = "M3: Flying-Logic reasoning graph (src/reason: And|Or juncts, demote-only cycle-safe Verdict propagation, additive studio JSON)", completion = 100 },
-  { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 0 },
+  { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 90 },
   { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 0 },
   { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 0 },
   { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 0 },
@@ -59,6 +59,22 @@ milestones = [
 # are scripted (behind --heavy/--mizar) but not installed this session.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
+#
+# M4 landed 2026-07-01 (90%): the Idris2 backend — arghda is now genuinely
+# multi-backend. src/prover/idris2.rs: `idris2 --check --source-dir <root>
+# <file>` (ground-truthed vs Idris2 0.7.0), exit-code-only verdict; dotted
+# module names reuse graph::module_name_of; .idr module_to_path; Idris2 import
+# parser (`import [public] Mod [as Alias]`, top-level — no `open`); Main.idr
+# root discovery. src/lint/idris2.rs: Idris2EscapeHatch (believe_me/assert_total
+# /assert_smaller/idris_crash + `%default partial`), named "escape-hatch" so it
+# reuses the reason-graph amber cap. WIRED via a new `--backend agda|idris2` CLI
+# selector on scan/check/dag/reason (backend_for()); unknown backend errors
+# cleanly. 93 tests (70 lib + 23 integration; +9 Idris2 unit +3 Idris2
+# integration; the graph/dag/reason tests are hermetic — text parsing, no binary
+# needed). Dogfooded with REAL idris2 on PATH: `check --backend idris2` →
+# proven-eligible; `reason --backend idris2 --check` → live typechecks, Main cone
+# proven+wired, Orphan proven-but-unwired. Follow-ons (the missing 10%):
+# .ipkg-declared roots, totality-hole (`?name`) + per-def `partial` lint.
 #
 # M3 landed 2026-07-01: the Flying-Logic reasoning graph (src/reason/) — the
 # headline capability. Wraps DagDocument verbatim (ReasonDocument.dag) + adds a
@@ -104,10 +120,10 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "M1 (Backend trait) + M3 (reasoning graph) DONE. Next, all unblocked by the stable trait — pick per priority:",
-  "Flying-Logic epic M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; believe_me/assert_total/%partial escape-hatches) — Idris2 v0.7.0 is provisioned.",
-  "Flying-Logic epic M5: SMT solver backends (Z3, CVC5) — the Solver kind; SMT-LIB2 -> sat(Refuted)/unsat(Proven)/unknown(Unknown). Both binaries are provisioned.",
+  "M1 (Backend trait) + M3 (reasoning graph) + M4 (Idris2) DONE. Next, all unblocked by the stable trait + --backend selector:",
+  "Flying-Logic epic M5: SMT solver backends (Z3, CVC5) — the FIRST Solver-kind backend; SMT-LIB2 -> unsat(Proven)/sat(Refuted)/unknown(Unknown). Both binaries provisioned. Exercises the Solver half of the taxonomy (no imports; isolated nodes).",
   "Flying-Logic epic M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island; cross-flag import edges forbidden).",
+  "M4 follow-on (the missing 10%): .ipkg-declared roots; totality-hole (?name) + per-def `partial` lint.",
   "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs) so `arghda reason <workspace>` lights the cone without --check.",
   "Finish M0: add the `arghda doctor` Rust subcommand and repoint `just doctor` at it (interim shells provision-provers.sh --verify-only).",
   "Serve /.well-known/groove for PanLL discovery (Groove protocol) — folds into M11.",
@@ -119,10 +135,11 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M3: 61 lib + 20 integration = 81 tests pass. Dogfooded via real CLI
-# runs: `dag` JSON byte-compatible; `check` + `reason --check` ran real agda
-# typechecks (proven-eligible / all-Proven+wired cone). Dogfooded historically
-# against echo-types + agda-unused.
+# post-M4: 70 lib + 23 integration = 93 tests pass. Dogfooded via real CLI
+# runs on BOTH backends: agda (`check`/`reason --check`) and idris2 (`check
+# --backend idris2` → proven-eligible; `reason --backend idris2 --check` →
+# live-typechecked cone). Dogfooded historically against echo-types +
+# agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]
