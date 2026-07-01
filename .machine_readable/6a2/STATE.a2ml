@@ -46,7 +46,7 @@ milestones = [
   { name = "M3: Flying-Logic reasoning graph (src/reason: And|Or juncts, demote-only cycle-safe Verdict propagation, additive studio JSON)", completion = 100 },
   { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 95 },
   { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 100 },
-  { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 85 },
+  { name = "M6: Lean4 adapter (lake build + #print axioms audit)", completion = 92 },
   { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 70 },
   { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 0 },
   { name = "M9: Isabelle adapter (--heavy; dogfood tropical-resource-typing .thy)", completion = 0 },
@@ -74,6 +74,22 @@ milestones = [
 # baseline). Landed via #40; the advanced-security bot confirmed "Code Scanning
 # has recently been set up". Permanent — future PRs satisfy the gate
 # automatically. NB the template is fine; only extraction-origin repos drift.
+#
+# M6 FOLLOW-ON landed 2026-07-01: the Lean `#print axioms` audit — the honest
+# Unknown→Proven promotion. On a clean elaboration (base verdict Unknown),
+# check_file now runs an audit: parse decl names (theorem/lemma/def/abbrev/
+# instance, skipping attrs/modifiers/anonymous), copy the source to a fresh
+# TEMP DIR (std-only, no new dep; cleaned up) + append `#print axioms <name>`
+# per decl, run `lean`, and classify (ground-truthed vs Lean 4.13.0):
+#   all decls "does not depend on any axioms" or only {propext, Classical.choice,
+#   Quot.sound} → Proven; any sorryAx → Admitted; any OTHER axiom (e.g.
+#   native_decide's) → Postulated. Audit failure (imports unresolvable in the
+#   temp dir, no decls, lean absent) → None → stays Unknown (honest, never
+#   wrong). REACH: import-free files (temp-dir copy elaborates without
+#   LEAN_PATH); imported files need lake-env (still the remaining M6 follow-on).
+#   129 tests (+2 unit: decl_names, classify_axioms). Dogfooded REAL lean:
+#   rfl→proven-eligible, Classical→proven-eligible, native_decide→POSTULATED
+#   (the audit catches what bare elaboration hides), sorry→admitted. M6 now 92%.
 #
 # M4 FOLLOW-ON landed 2026-07-01: Idris2 `.ipkg`-declared roots. discover_roots
 # now unions (a) `.ipkg` `main = <Module>` resolved to its .idr (honouring an
@@ -242,7 +258,7 @@ milestones = [
 actions = [
   "ENGINE-SPINE DELIVERABLE COMPLETE: M0-M7 + M11 all landed. v0.1 spec closed. Six backends (agda, agda-cubical, idris2, lean4 Assistant; z3, cvc5 Solver) + reasoning graph + doctor + groove + dispatch seam. Remaining work is refinement + the heavy tail:",
   "M7 follow-on: the real Echidna orchestrator HTTP client (feature-gated), once Echidna's API is confirmed — only Dispatch::run changes.",
-  "M6 follow-on: lake-env/LEAN_PATH multi-file resolution; per-decl #print axioms audit to promote Unknown→Proven.",
+  "M6 follow-on: #print axioms audit DONE (import-free files promote honestly); remaining = lake-env/LEAN_PATH so imported files can be checked + audited too.",
   "M4 follow-on: .ipkg-declared roots DONE; remaining = totality-hole (?name) + per-def `partial` lint.",
   "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs).",
   "M8-M10 heavy tail (Coq/Rocq, Isabelle, Mizar) — gated on --heavy provisioning (Coq via opam ~1hr; Isabelle ~4GB; Mizar niche).",
@@ -254,8 +270,8 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M4-followon: 93 lib + 34 integration = 127 tests pass. codeql.yml added
-# (code-scanning gate fix). doctor/groove/dispatch
+# post-M6-followon: 95 lib + 34 integration = 129 tests pass. codeql.yml added
+# (code-scanning gate fix). Lean #print axioms audit dogfooded. doctor/groove/dispatch
 # dogfooded: 6/6 backends runnable; groove writes /.well-known/groove; --dispatch
 # local real, echidna honest-stub. All six backends dogfooded via real CLI: agda
 # + agda-cubical + idris2 + lean4 (Assistant), z3 + cvc5 (Solver). Dogfooded
