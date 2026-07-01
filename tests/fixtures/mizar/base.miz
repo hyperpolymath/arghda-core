@@ -1,0 +1,4 @@
+environ
+ vocabularies XBOOLE_0;
+ notations XBOOLE_0;
+begin

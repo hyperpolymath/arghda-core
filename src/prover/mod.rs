@@ -31,6 +31,7 @@ pub mod agda;
 pub mod idris2;
 pub mod isabelle;
 pub mod lean;
+pub mod mizar;
 pub mod rocq;
 pub mod smt;
 
@@ -38,6 +39,7 @@ pub use agda::{Agda, AgdaCubical};
 pub use idris2::Idris2;
 pub use isabelle::Isabelle;
 pub use lean::Lean;
+pub use mizar::Mizar;
 pub use rocq::Coq;
 pub use smt::Smt;
 

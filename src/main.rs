@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
     build_dag, build_reason, event, groove_manifest, run_lints, unused, watcher, Agda, AgdaCubical,
-    Backend, BackendKind, Coq, Dispatch, Idris2, Isabelle, Lean, LintRule, Probe, RuleConfig, Smt,
-    State, Verdict, Workspace,
+    Backend, BackendKind, Coq, Dispatch, Idris2, Isabelle, Lean, LintRule, Mizar, Probe,
+    RuleConfig, Smt, State, Verdict, Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -24,6 +24,7 @@ const KNOWN_BACKENDS: &[&str] = &[
     "lean4",
     "coq",
     "isabelle",
+    "mizar",
     "z3",
     "cvc5",
 ];
@@ -38,10 +39,11 @@ fn backend_for(name: &str) -> Result<Box<dyn Backend>> {
         "lean4" => Ok(Box::new(Lean)),
         "coq" => Ok(Box::new(Coq)),
         "isabelle" => Ok(Box::new(Isabelle)),
+        "mizar" => Ok(Box::new(Mizar)),
         "z3" => Ok(Box::new(Smt::z3())),
         "cvc5" => Ok(Box::new(Smt::cvc5())),
         other => anyhow::bail!(
-            "unknown backend `{other}` (known: agda, agda-cubical, idris2, lean4, coq, isabelle, z3, cvc5)"
+            "unknown backend `{other}` (known: agda, agda-cubical, idris2, lean4, coq, isabelle, mizar, z3, cvc5)"
         ),
     }
 }
@@ -50,7 +52,7 @@ fn backend_for(name: &str) -> Result<Box<dyn Backend>> {
 #[command(
     name = "arghda",
     version,
-    about = "Proof-workspace manager for provers/solvers (Agda, Cubical, Idris2, Lean4, Coq, Isabelle, Z3, CVC5)"
+    about = "Proof-workspace manager for provers/solvers (Agda, Cubical, Idris2, Lean4, Coq, Isabelle, Mizar, Z3, CVC5)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -78,7 +80,7 @@ enum Cmd {
         #[arg(long)]
         config: Option<PathBuf>,
         /// Backend: `agda` (default), `agda-cubical`, `idris2`, `lean4`,
-        /// `coq`, `isabelle`, `z3`, `cvc5`.
+        /// `coq`, `isabelle`, `mizar`, `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
         /// Also run the external `agda-unused` analyser and re-emit its
@@ -98,7 +100,7 @@ enum Cmd {
         #[arg(long)]
         include_root: Option<PathBuf>,
         /// Backend: `agda` (default), `agda-cubical`, `idris2`, `lean4`,
-        /// `coq`, `isabelle`, `z3`, `cvc5`.
+        /// `coq`, `isabelle`, `mizar`, `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
         /// Where the check runs: `local` (default) or `echidna[=<url>]`
@@ -126,7 +128,7 @@ enum Cmd {
         #[arg(long)]
         config: Option<PathBuf>,
         /// Backend: `agda` (default), `agda-cubical`, `idris2`, `lean4`,
-        /// `coq`, `isabelle`, `z3`, `cvc5`.
+        /// `coq`, `isabelle`, `mizar`, `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
     },
@@ -150,7 +152,7 @@ enum Cmd {
         #[arg(long)]
         config: Option<PathBuf>,
         /// Backend: `agda` (default), `agda-cubical`, `idris2`, `lean4`,
-        /// `coq`, `isabelle`, `z3`, `cvc5`.
+        /// `coq`, `isabelle`, `mizar`, `z3`, `cvc5`.
         #[arg(long, default_value = "agda")]
         backend: String,
         /// Run the backend on every node to populate REAL prover verdicts

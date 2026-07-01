@@ -11,7 +11,7 @@ status = "active"  # active | paused | archived
 
 [project-context]
 name = "arghda-core"
-purpose = "Multi-backend proof-workspace manager — the 'Flying Logic for provers/solvers' engine. A four-state triage workspace (inbox/working/proven/rejected) as file moves, per-backend lint packs targeting the silent-failure class, a backend-parametric import-graph DAG, a demote-only status-propagating reasoning graph, and a JSON + event-stream contract a visual layer (arghda-studio) consumes. Eight backends across both interaction models (Agda, Cubical-Agda, Idris2, Lean4, Coq/Rocq, Isabelle/HOL assistants; Z3, CVC5 solvers). It never proves anything itself; the tools do."
+purpose = "Multi-backend proof-workspace manager — the 'Flying Logic for provers/solvers' engine. A four-state triage workspace (inbox/working/proven/rejected) as file moves, per-backend lint packs targeting the silent-failure class, a backend-parametric import-graph DAG, a demote-only status-propagating reasoning graph, and a JSON + event-stream contract a visual layer (arghda-studio) consumes. Nine backends across both interaction models (Agda, Cubical-Agda, Idris2, Lean4, Coq/Rocq, Isabelle/HOL, Mizar assistants; Z3, CVC5 solvers). It never proves anything itself; the tools do."
 completion-percentage = 92
 
 [position]
@@ -50,7 +50,7 @@ milestones = [
   { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 70 },
   { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 90 },
   { name = "M9: Isabelle adapter (--heavy; dogfood tropical-resource-typing .thy)", completion = 90 },
-  { name = "M10: Mizar adapter (detect-only first; highest uncertainty)", completion = 0 },
+  { name = "M10: Mizar adapter (detect-only first; highest uncertainty)", completion = 85 },
   { name = "M11: studio JSON freeze (reason/0.1) + Groove manifest", completion = 100 },
 ]
 # M0 provisioning verified in-container 2026-07-01: agda 2.6.3 (+stdlib v2.3
@@ -63,8 +63,14 @@ milestones = [
 # /opt, symlinked to /usr/local/bin/isabelle; `isabelle version` → Isabelle2025;
 # doctor [OK] isabelle. NB the provision script's Isabelle URL was stale
 # (/dist/Isabelle2024… 404s once a newer release is current) — FIXED at source
-# to the archived /website-<VER>/dist/ path + bumped to Isabelle2025. Mizar
-# remains scripted (behind --mizar) but not installed (distribution manual).
+# to the archived /website-<VER>/dist/ path + bumped to Isabelle2025. MIZAR NOW
+# INSTALLED (2026-07-01) — the "highest uncertainty" one turned out tractable:
+# mizar.org → mizar.uwb.edu.pl ships a STATICALLY-LINKED i386 tarball
+# (mizar-8.1.15_5.94.1493) that runs on x86_64 with NO 32-bit libs; unpacked to
+# /opt/mizar (binaries + MML flat), verifier/accom symlinked to /usr/local/bin;
+# `verifier -v` → Mizar 8.1.15; doctor [OK] mizar. Runtime needs MIZFILES=
+# /opt/mizar. The provision script's install_mizar was upgraded from a warn-stub
+# to a real installer + verify line.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
 #
@@ -183,6 +189,33 @@ milestones = [
 # parsed, ROOT theories=All → crt_root All, Base+Util wired, Orphan unwired;
 # doctor → [OK] isabelle assistant Isabelle2025. Remaining 10%: session-
 # qualified / relative-path imports + dependency-ordered multi-session builds.
+#
+# M10 landed 2026-07-01 (85%, third heavy-tail backend — and a REAL verify, not
+# the planned detect-only). Foundation-first: the "highest uncertainty" one
+# turned out tractable — Mizar 8.1.15's static i386 verifier runs on x86_64, so
+# it became a genuine dogfood. src/prover/mizar.rs (`Mizar`): Assistant kind,
+# extensions [miz], command `verifier`. NO lint pack (empty by design): Mizar
+# has no sorry/admit escape hatch — an incomplete proof is just a verifier
+# error, and a normal article can't add axioms — so soundness IS the verifier
+# (verdict is binary). check_file (ground-truthed vs Mizar 8.1.15): MIZFILES
+# unset → Unavailable (the MML data dir is the precondition — honest, not a
+# fake pass); binary absent → Unavailable; else copy the .miz (+ siblings) to a
+# temp dir, run `accom` then `verifier` (env MIZFILES), and read the sibling
+# `<stem>.err` — EMPTY + exit 0 → Proven, non-empty/exit≠0 → Error (Mizar
+# reports errors in .err, the authoritative signal). Imports: the `environ`
+# block directives (vocabularies/notations/theorems/…), lower-cased to match
+# on-disk stems; MML refs external/dropped. Roots: none (Mizar has no
+# aggregator convention — honest empty set, nothing wired). probe() overridden
+# to `verifier -v`. Wired: backend_for "mizar" + KNOWN_BACKENDS + all four
+# --backend help strings + about line. Provision script's install_mizar upgraded
+# from a warn-stub to a real installer (static-i386 tarball + symlinks) + a
+# verify line + MIZAR_TAR pin. 167 tests (+6 mizar unit +2 mizar integration;
+# graph tests hermetic — environ text only, run tool-less). DOGFOODED vs real
+# Mizar 8.1.15 (MIZFILES=/opt/mizar): check → good=proven (theorem for X being
+# set holds X = X, importing XBOOLE_0) / broken=error / empty=proven; doctor →
+# [OK] mizar assistant Mizar Ver. 8.1.15. Remaining 15%: local-article
+# cross-references need prel export (miz2prel) for the throwaway session; no
+# root convention.
 #
 # M7 landed 2026-07-01 (70%): the Echidna dispatch seam — completes the
 # engine-spine deliverable (M0-M7 + M11). src/dispatch.rs: `Dispatch { Local,
@@ -347,7 +380,8 @@ actions = [
   "M3 follow-on: DONE — `reason --workspace <ws>` sources real verdicts from a `proven/` state (workspace_verdicts) + demotes stale-proven via the content-hash closure. Refinement follow-ons bucket now complete.",
   "M8 (Coq/Rocq): DONE (90%) — coqc 8.18.0 provisioned + adapter built + dogfooded (proven/admitted/postulated/error) with Section-aware postulate classifier. Remaining: _CoqProject logical paths + dependency-ordered compilation.",
   "M9 (Isabelle): DONE (90%) — Isabelle2025 provisioned + adapter built + dogfooded (proven/admitted/postulated/error) via session-build; ROOT-based roots, imports-clause edges. Remaining: session-qualified imports + dependency-ordered multi-session builds.",
-  "M10 (Mizar): next, foundation-first — detect-only first (distribution is manual/niche via mizar.org; provision honestly, check_file → Unavailable until a real toolchain confirms invocation). Then climb to M6 lake-env, M4 totality lint, M7 Echidna client.",
+  "M10 (Mizar): DONE (85%) — turned out to be a REAL verify, not detect-only: static i386 verifier runs on x86_64; provisioned + adapter (accom+verifier+.err) + dogfooded (proven/error). HEAVY TAIL M8-M10 COMPLETE. Remaining: local-article prel export.",
+  "Next, climb up: M6 (lake-env/LEAN_PATH so imported Lean files get audited), M4 (totality-hole ?name + per-def partial lint for Idris2), M7 (real Echidna HTTP client, feature-gated). Each its own focused draft PR, gate green, real-tool dogfood where installed.",
 ]
 
 [maintenance-status]
@@ -356,14 +390,15 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M9: 118 lib + 41 integration = 159 tests pass. codeql.yml added
-# (code-scanning gate fix). M9 Isabelle adapter dogfooded vs real Isabelle2025
-# (proven/admitted/postulated/error; reason --check; imports edges; ROOT roots;
-# wired; doctor [OK] isabelle). M8 Coq adapter dogfooded vs real coqc 8.18.0.
-# reason --workspace verdicts+staleness dogfooded. Lean #print axioms audit
-# dogfooded. doctor/groove/dispatch dogfooded. EIGHT backends now: agda +
-# agda-cubical + idris2 + lean4 + coq + isabelle (Assistant), z3 + cvc5
-# (Solver). Dogfooded historically vs echo-types + agda-unused.
+# post-M10: 124 lib + 43 integration = 167 tests pass. codeql.yml added
+# (code-scanning gate fix). M10 Mizar adapter dogfooded vs real Mizar 8.1.15
+# (proven/error via accom+verifier+.err; MIZFILES=/opt/mizar; doctor [OK]
+# mizar). M9 Isabelle dogfooded vs Isabelle2025; M8 Coq dogfooded vs coqc
+# 8.18.0. reason --workspace verdicts+staleness dogfooded. Lean #print axioms
+# audit dogfooded. doctor/groove/dispatch dogfooded. NINE backends now: agda +
+# agda-cubical + idris2 + lean4 + coq + isabelle + mizar (Assistant), z3 + cvc5
+# (Solver). HEAVY TAIL M8-M10 COMPLETE. Dogfooded historically vs echo-types +
+# agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]
