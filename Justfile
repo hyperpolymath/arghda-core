@@ -55,6 +55,22 @@ dag path:
 agda-check file:
     cargo run -- check "{{file}}"
 
+# Provision the prover/solver toolchains ArghDA drives (tractable set:
+# agda+cubical, zig, idris2, lean4, z3, cvc5). Honest: a backend is reported
+# OK only if its own --version actually returned 0 in the run.
+provision:
+    bash scripts/provision-provers.sh
+
+# As `provision`, plus the heavy backends (Coq via opam, Isabelle ~4 GB).
+provision-heavy:
+    bash scripts/provision-provers.sh --heavy
+
+# Report which prover/solver backends are actually runnable, no installs.
+# (Interim: shells the provision script's --verify-only table until the
+# `arghda doctor` subcommand lands.)
+doctor:
+    bash scripts/provision-provers.sh --verify-only
+
 # RSR: the mandated machine-readable artefacts are present and well-formed.
 validate-rsr:
     @for f in STATE META ECOSYSTEM AGENTIC NEUROSYM PLAYBOOK; do \
