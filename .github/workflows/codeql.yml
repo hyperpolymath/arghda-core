@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: MPL-2.0
+name: CodeQL Security Analysis
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 6 1 * *'   # monthly 1st 06:00 UTC (Actions burn cut, standards#288)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Default to `actions` — scaffolded repos rarely have JS/TS
+          # source; `javascript-typescript` produced "no source files"
+          # failures on every CodeQL run. The `actions` extractor scans
+          # workflow files which every repo has. Override per-repo if
+          # the scaffolded project actually contains JS/TS code.
+          # Per hypatia rule `codeql_language_matrix_mismatch`.
+          - language: actions
+            build-mode: none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@0d579ffd059c29b07949a3cce3983f0780820c98 # v3.28.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@0d579ffd059c29b07949a3cce3983f0780820c98 # v3.28.1
+        with:
+          category: "/language:${{ matrix.language }}"
