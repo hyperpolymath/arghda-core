@@ -42,7 +42,7 @@ milestones = [
 milestones = [
   { name = "M0: provision-provers.sh (pinned, honest --version verification) + `just provision/doctor` recipes", completion = 80 },
   { name = "M1: Backend trait (Assistant|Solver kinds; Outcome/Verdict); agda.rs -> prover/agda.rs; graph/dag take &dyn Backend (pure refactor, 50 tests stay green)", completion = 100 },
-  { name = "M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island)", completion = 0 },
+  { name = "M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island)", completion = 100 },
   { name = "M3: Flying-Logic reasoning graph (src/reason: And|Or juncts, demote-only cycle-safe Verdict propagation, additive studio JSON)", completion = 100 },
   { name = "M4: Idris2 adapter (core/ABI language: .ipkg/--check/totality; escape-hatches)", completion = 90 },
   { name = "M5: SMT solver backends (Z3, CVC5): SMT-LIB2 -> sat/unsat/unknown -> Verdict", completion = 100 },
@@ -59,6 +59,23 @@ milestones = [
 # are scripted (behind --heavy/--mizar) but not installed this session.
 # Remaining M0: `arghda doctor` Rust subcommand (interim: `just doctor` shells
 # the script's --verify-only table).
+#
+# M2 landed 2026-07-01: Cubical-Agda variant. Implemented as a SEPARATE backend
+# `AgdaCubical` (name "agda-cubical") rather than the plan's `Agda::cubical()`
+# constructor — a distinct type expresses the flag-profile ISLAND better (a
+# `--cubical --safe` file and a `--safe --without-K` file cannot import each
+# other; Agda enforces this at typecheck and arghda surfaces the resulting
+# Error honestly) and avoids churning ~19 `Agda` value-uses. `--cubical --safe`,
+# NOT `--without-K`. src/prover/agda.rs: `AgdaCubical` shares invoke_agda()
+# (adds `--cubical`) + the graph methods with `Agda`; differs in name/safe_mode/
+# lint pack. src/lint/safe_pragma.rs: `SafePragma` parameterised by required
+# flags — `standard()` = [--safe,--without-K], `cubical()` = [--cubical,--safe];
+# lint::agda_cubical_rules() swaps it in. Wired via `--backend agda-cubical`.
+# 107 tests (79 lib + 28 integration; +3 safe_pragma unit +1 cubical-identity
+# unit +3 cubical integration). Dogfooded REAL: `check --backend agda-cubical`
+# on a --cubical --safe file → proven-eligible; the standard `agda` backend on
+# the SAME file → rejected (missing-safe-pragma: missing --without-K). The
+# island distinction is demonstrated end-to-end.
 #
 # M5 landed 2026-07-01: SMT solver backends (Z3, CVC5) — the FIRST Solver-kind
 # backends, exercising the other half of the taxonomy. src/prover/smt.rs: one
@@ -135,13 +152,13 @@ milestones = [
 
 [critical-next-actions]
 actions = [
-  "M1 (Backend trait) + M3 (reasoning graph) + M4 (Idris2) + M5 (Z3/CVC5) DONE. Both interaction models (Assistant + Solver) now real. Next:",
-  "Flying-Logic epic M2: Cubical-Agda variant (Agda::cubical(), --cubical --safe island; cross-flag import edges forbidden). Small — extends the existing Agda backend.",
+  "M1 + M2 + M3 + M4 + M5 DONE. Five backends across both interaction models: agda, agda-cubical, idris2 (Assistant); z3, cvc5 (Solver). Next:",
+  "Finish M0: add the `arghda doctor` Rust subcommand — report which of the five backends are actually runnable (probe each binary), repoint `just doctor` at it, feed the Groove manifest. Closes the last M0 gap.",
   "Flying-Logic epic M6: Lean4 adapter (lake build + #print axioms audit → honest Unknown soundness when the audit is absent). Lean 4.13.0 provisioned.",
-  "Finish M0: add the `arghda doctor` Rust subcommand (report which backends are runnable — now agda/idris2/z3/cvc5) and repoint `just doctor` at it.",
+  "Flying-Logic epic M11: studio JSON freeze (reason/0.1) + Groove /.well-known/groove manifest (the one open v0.1 milestone).",
   "M4 follow-on: .ipkg-declared roots; totality-hole (?name) + per-def `partial` lint.",
   "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs).",
-  "Serve /.well-known/groove for PanLL discovery (Groove protocol) — folds into M11.",
+  "M8-M10 heavy tail (Coq/Rocq, Isabelle, Mizar) — gated on --heavy provisioning.",
 ]
 
 [maintenance-status]
@@ -150,9 +167,9 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M5: 75 lib + 25 integration = 100 tests pass. Dogfooded via real CLI on
-# all four backends: agda + idris2 (Assistant), z3 + cvc5 (Solver). Dogfooded
-# historically against echo-types + agda-unused.
+# post-M2: 79 lib + 28 integration = 107 tests pass. Dogfooded via real CLI on
+# all five backends: agda + agda-cubical + idris2 (Assistant), z3 + cvc5
+# (Solver). Dogfooded historically against echo-types + agda-unused.
 
 [ecosystem]
 part-of = ["arghda"]

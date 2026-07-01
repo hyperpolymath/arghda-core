@@ -30,7 +30,7 @@ pub mod agda;
 pub mod idris2;
 pub mod smt;
 
-pub use agda::Agda;
+pub use agda::{Agda, AgdaCubical};
 pub use idris2::Idris2;
 pub use smt::Smt;
 
