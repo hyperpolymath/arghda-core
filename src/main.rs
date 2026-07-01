@@ -151,6 +151,12 @@ enum Cmd {
         /// `echidna[=<url>]`.
         #[arg(long, default_value = "local")]
         dispatch: String,
+        /// A four-state workspace whose `proven/` state supplies verdicts
+        /// WITHOUT re-checking: a node whose file is proven (and fresh) →
+        /// `proven`; proven-but-stale (content/closure hash changed) →
+        /// demoted to `unknown`. Matched by file basename.
+        #[arg(long)]
+        workspace: Option<PathBuf>,
     },
     /// Claim a file: inbox -> working.
     Claim { workspace: PathBuf, file: String },
@@ -242,6 +248,7 @@ fn main() -> Result<()> {
             backend,
             check,
             dispatch,
+            workspace,
         } => reason(
             &path,
             &entry,
@@ -250,6 +257,7 @@ fn main() -> Result<()> {
             &backend,
             check,
             &dispatch,
+            workspace.as_deref(),
         )?,
         Cmd::Claim { workspace, file } => {
             transition(&workspace, &file, State::Inbox, State::Working)?
@@ -542,6 +550,7 @@ fn dag(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn reason(
     include_root: &Path,
     entry: &[PathBuf],
@@ -550,6 +559,7 @@ fn reason(
     backend_name: &str,
     do_check: bool,
     dispatch: &str,
+    workspace: Option<&Path>,
 ) -> Result<()> {
     let backend = backend_for(backend_name)?;
     let (roots, rules, cfg) = resolve_roots_and_rules(
@@ -567,12 +577,29 @@ fn reason(
         backend.as_ref(),
     )?;
 
-    // Real prover verdicts by module id. Empty unless `--check`, in which
-    // case each node is typechecked for real (honest exit codes) — a green
-    // node is only ever `proven` because the tool returned 0. Staleness
-    // needs a workspace `proven/` state, so it stays empty here.
+    // Real prover verdicts by module id, plus the stale set.
     let mut verdicts = std::collections::BTreeMap::new();
-    let stale = std::collections::BTreeSet::new();
+    let mut stale = std::collections::BTreeSet::new();
+
+    // Source 1 — a workspace's `proven/` state (no re-check). The pure
+    // mapping lives in `reason::workspace_verdicts`; here we just read the
+    // proven + stale basename sets off the workspace and feed them in.
+    if let Some(ws_path) = workspace {
+        let ws = Workspace::open(ws_path)?;
+        let proven: std::collections::BTreeSet<String> = ws
+            .list(State::Proven)?
+            .iter()
+            .filter_map(|p| p.file_name().and_then(|s| s.to_str()).map(String::from))
+            .collect();
+        let stale_names: std::collections::BTreeSet<String> =
+            ws.stale_proven()?.into_iter().map(|e| e.file).collect();
+        let (wv, ws_stale) = arghda_core::workspace_verdicts(&dag_doc, &proven, &stale_names);
+        verdicts.extend(wv);
+        stale.extend(ws_stale);
+    }
+
+    // Source 2 — `--check`: typecheck each node for real (honest exit codes).
+    // A fresh check is authoritative, so it overrides workspace verdicts.
     if do_check {
         let route = Dispatch::parse(dispatch)?;
         for node in &dag_doc.nodes {
@@ -580,6 +607,7 @@ fn reason(
             let outcome = route.run(backend.as_ref(), &file, include_root)?;
             if outcome.available {
                 verdicts.insert(node.id.clone(), outcome.verdict);
+                stale.remove(&node.id); // a fresh real verdict is not stale
             }
         }
     }

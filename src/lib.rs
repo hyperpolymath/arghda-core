@@ -38,5 +38,7 @@ pub use prover::{
     default_backend, Agda, AgdaCubical, Backend, BackendKind, Idris2, Lean, Outcome, Probe, Smt,
     Verdict,
 };
-pub use reason::{build as build_reason, Junct, ReasonDocument, ReasonEdge, ReasonNode};
+pub use reason::{
+    build as build_reason, workspace_verdicts, Junct, ReasonDocument, ReasonEdge, ReasonNode,
+};
 pub use workspace::{StaleEntry, State, Workspace};

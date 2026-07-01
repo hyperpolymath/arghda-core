@@ -316,6 +316,37 @@ pub fn build(
     }
 }
 
+/// Derive reasoning inputs from a workspace's `proven/` state, WITHOUT
+/// re-checking: a node whose file basename is in `proven_basenames` gets a
+/// `Proven` self-verdict; if that basename is also in `stale_basenames`
+/// (content/closure hash changed since promotion) the node id is added to the
+/// returned stale set, so [`build`]'s fold demotes it to `Unknown` and
+/// propagates. Returns `(verdicts, stale)` for [`build`]. Matched by basename
+/// — the workspace stores files flat by basename, so distinct modules that
+/// share a basename would collide (a documented limitation).
+pub fn workspace_verdicts(
+    dag: &DagDocument,
+    proven_basenames: &BTreeSet<String>,
+    stale_basenames: &BTreeSet<String>,
+) -> (BTreeMap<String, Verdict>, BTreeSet<String>) {
+    let mut verdicts = BTreeMap::new();
+    let mut stale = BTreeSet::new();
+    for node in &dag.nodes {
+        let base = node
+            .file
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        if proven_basenames.contains(base) {
+            verdicts.insert(node.id.clone(), Verdict::Proven);
+            if stale_basenames.contains(base) {
+                stale.insert(node.id.clone());
+            }
+        }
+    }
+    (verdicts, stale)
+}
+
 /// The set of ids reachable from any root by following adjacency edges.
 fn reachable(roots: &[String], adj: &BTreeMap<String, Vec<(String, Junct)>>) -> BTreeSet<String> {
     let mut seen: BTreeSet<String> = BTreeSet::new();
@@ -591,5 +622,63 @@ mod tests {
         for k in ["from", "to", "junct", "kind"] {
             assert!(v["edges"][0].get(k).is_some(), "reason edge missing `{k}`");
         }
+    }
+
+    // ── M3 follow-on: workspace-fed verdicts + staleness ─────────────────
+    fn two_node_dag() -> crate::dag::DagDocument {
+        use crate::dag::{DagDocument, DagNode, LintSummary};
+        use crate::graph::Edge;
+        use std::path::PathBuf;
+        let mk = |id: &str, file: &str| DagNode {
+            id: id.to_string(),
+            file: PathBuf::from(file),
+            status: "clean",
+            lint: LintSummary::default(),
+            headlines: vec![],
+        };
+        DagDocument {
+            version: "0.1",
+            include_root: PathBuf::from("/r"),
+            entry_modules: vec![PathBuf::from("/r/All.agda")],
+            generated_at: "t".to_string(),
+            nodes: vec![mk("All", "All.agda"), mk("Good", "Good.agda")],
+            edges: vec![Edge {
+                from: "All".to_string(),
+                to: "Good".to_string(),
+                kind: "imports",
+            }],
+            blocked: vec![],
+        }
+    }
+
+    #[test]
+    fn workspace_proven_lights_the_cone_and_stale_demotes() {
+        use crate::prover::Agda;
+        let dag = two_node_dag();
+        let proven: BTreeSet<String> = ["Good.agda".to_string()].into_iter().collect();
+
+        // Fresh proven: Good → Proven; All (not proven) → not set.
+        let (v, s) = workspace_verdicts(&dag, &proven, &BTreeSet::new());
+        assert_eq!(v.get("Good"), Some(&Verdict::Proven));
+        assert!(!v.contains_key("All"));
+        assert!(s.is_empty());
+        let doc = build(dag.clone(), &Agda, &v, &s);
+        let eff =
+            |d: &ReasonDocument, id: &str| d.nodes.iter().find(|n| n.id == id).unwrap().effective;
+        assert_eq!(eff(&doc, "Good"), Verdict::Proven);
+        assert_eq!(eff(&doc, "All"), Verdict::Unknown); // not proven itself
+
+        // Stale proven: Good is proven-but-stale → demoted to Unknown, and it
+        // drags its importer All down too.
+        let stale: BTreeSet<String> = ["Good.agda".to_string()].into_iter().collect();
+        let (v2, s2) = workspace_verdicts(&dag, &proven, &stale);
+        assert!(s2.contains("Good"));
+        let doc2 = build(dag, &Agda, &v2, &s2);
+        assert_eq!(
+            eff(&doc2, "Good"),
+            Verdict::Unknown,
+            "stale proven → unknown"
+        );
+        assert_eq!(eff(&doc2, "All"), Verdict::Unknown);
     }
 }

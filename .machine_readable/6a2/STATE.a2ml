@@ -100,6 +100,22 @@ milestones = [
 # --backend idris2` over an ipkg fixture → crt_roots ['App'], App+Helper wired.
 # M4 now 95% (remaining: totality-hole `?name` + per-def `partial` lint).
 #
+# M3 FOLLOW-ON landed 2026-07-01: workspace-fed verdicts + staleness in `reason`
+# — the reasoning graph now sources REAL verdicts from a four-state workspace's
+# `proven/` state, no re-check needed. New `arghda reason <path> --workspace
+# <ws>`: pure mapping `reason::workspace_verdicts(dag, proven, stale)` sets a
+# node whose file basename is in `proven/` to Proven (evidence "prover: proven"),
+# and if that same file is stale (content/closure hash changed since promotion,
+# via `Workspace::stale_proven`) inserts it into the stale set so the demote-only
+# fold lowers it back to Unknown (evidence "prover: proven; stale: closure hash
+# changed"). Matched by file basename (documented collision caveat). `--check`
+# stays authoritative — a fresh typecheck overrides + clears staleness. Honest by
+# construction: verdicts come only from a recorded promotion, never fabricated;
+# staleness dominates a stale Proven. 130 tests (+1 reason unit: proven lights
+# the cone, stale demotes). Dogfooded: fresh proven leaf → effective proven, un-
+# proven root → unknown; edit the proven file on disk → Good demoted to unknown
+# with the stale evidence string. M3 base was 100%; this is pure additive refinement.
+#
 # M7 landed 2026-07-01 (70%): the Echidna dispatch seam — completes the
 # engine-spine deliverable (M0-M7 + M11). src/dispatch.rs: `Dispatch { Local,
 # Echidna { base_url } }` + `run(backend, file, include_root) -> Outcome`
@@ -260,7 +276,7 @@ actions = [
   "M7 follow-on: the real Echidna orchestrator HTTP client (feature-gated), once Echidna's API is confirmed — only Dispatch::run changes.",
   "M6 follow-on: #print axioms audit DONE (import-free files promote honestly); remaining = lake-env/LEAN_PATH so imported files can be checked + audited too.",
   "M4 follow-on: .ipkg-declared roots DONE; remaining = totality-hole (?name) + per-def `partial` lint.",
-  "M3 follow-on: feed real verdicts into `reason` from a workspace `proven/` state + wire staleness from the content-hash closure (proven.rs).",
+  "M3 follow-on: DONE — `reason --workspace <ws>` sources real verdicts from a `proven/` state (workspace_verdicts) + demotes stale-proven via the content-hash closure. Refinement follow-ons bucket now complete.",
   "M8-M10 heavy tail (Coq/Rocq, Isabelle, Mizar) — gated on --heavy provisioning (Coq via opam ~1hr; Isabelle ~4GB; Mizar niche).",
 ]
 
@@ -270,8 +286,9 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M6-followon: 95 lib + 34 integration = 129 tests pass. codeql.yml added
-# (code-scanning gate fix). Lean #print axioms audit dogfooded. doctor/groove/dispatch
+# post-M3-followon: 96 lib + 34 integration = 130 tests pass. codeql.yml added
+# (code-scanning gate fix). reason --workspace verdicts+staleness dogfooded.
+# Lean #print axioms audit dogfooded. doctor/groove/dispatch
 # dogfooded: 6/6 backends runnable; groove writes /.well-known/groove; --dispatch
 # local real, echidna honest-stub. All six backends dogfooded via real CLI: agda
 # + agda-cubical + idris2 + lean4 (Assistant), z3 + cvc5 (Solver). Dogfooded
