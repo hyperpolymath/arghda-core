@@ -265,6 +265,25 @@ milestones = [
 # the real orchestrator HTTP client, feature-gated, once Echidna's API is
 # confirmed — only Dispatch::run changes (no backend/caller churn).
 #
+# M7 FOLLOW-ON INVESTIGATED 2026-07-01 — verdict: BLOCKED, stub stays (M7 held
+# at 70%, correctly). To build the real Echidna client honestly you need a
+# confirmed HTTP contract to dogfood against. Investigation (in-scope only):
+# (1) src/dispatch.rs itself states the orchestrator API is "unconfirmed (it may
+# not exist yet)"; (2) ECOSYSTEM.a2ml describes echidna only at a high level
+# ("Multi-prover orchestrator, Unified Zig API service #3, port 8090") with NO
+# endpoints / request schema / response schema — i.e. no contract; (3) the
+# `echidna` repo is OUTSIDE this session's GitHub access scope (not among the
+# scoped repos), so it cannot be read to discover an API, and searching outside
+# scope is disallowed. Conclusion: there is nothing confirmed to implement
+# against, and writing a client would mean inventing an unverifiable contract —
+# which the honesty mandate and dispatch.rs's own honest-stub discipline forbid.
+# So the honest Unavailable stub is LEFT AS-IS; no code fabricated. Unblock
+# condition unchanged: a published Echidna HTTP API (endpoints + schemas) + a
+# reachable instance to dogfood against; then wire Dispatch::run behind a cargo
+# feature. This is the roadmap terminus — all tractable items (M0-M11 + the
+# M3/M4/M6 refinements + heavy tail M8-M10) are done; M7's client is the sole
+# residual and is externally blocked, not an effort gap.
+#
 # M11 landed 2026-07-01: studio JSON freeze (reason/0.1) + Groove manifest —
 # closes the ONE open v0.1 milestone (Groove service manifest, was 0%). Two
 # deliverables. (1) Studio JSON freeze: a reason/0.1 JSON CONTRACT test in
@@ -413,7 +432,8 @@ actions = [
   "M8 (Coq/Rocq): DONE (90%) — coqc 8.18.0 provisioned + adapter built + dogfooded (proven/admitted/postulated/error) with Section-aware postulate classifier. Remaining: _CoqProject logical paths + dependency-ordered compilation.",
   "M9 (Isabelle): DONE (90%) — Isabelle2025 provisioned + adapter built + dogfooded (proven/admitted/postulated/error) via session-build; ROOT-based roots, imports-clause edges. Remaining: session-qualified imports + dependency-ordered multi-session builds.",
   "M10 (Mizar): DONE (85%) — turned out to be a REAL verify, not detect-only: static i386 verifier runs on x86_64; provisioned + adapter (accom+verifier+.err) + dogfooded (proven/error). HEAVY TAIL M8-M10 COMPLETE. Remaining: local-article prel export.",
-  "Only M7 remains: the real Echidna HTTP client (feature-gated) — but FIRST confirm Echidna's API actually exists (search estate/GitHub for an echidna repo with a documented HTTP API); if it does not, keep the honest Unavailable stub and say so plainly rather than invent a contract. After M7 the roadmap's tractable items are exhausted.",
+  "M7 client INVESTIGATED 2026-07-01 → BLOCKED (stub stays): no confirmed Echidna HTTP contract exists (dispatch.rs says API unconfirmed; ECOSYSTEM.a2ml gives no endpoints/schema; the echidna repo is out of this session's access scope). Building a client would mean inventing an unverifiable contract — forbidden. Unblock: a published Echidna API + a reachable instance to dogfood; then wire Dispatch::run behind a cargo feature. ROADMAP TERMINUS — all tractable items done; M7's client is the sole residual, externally blocked.",
+  "Deeper cuts deliberately scoped out (available if the owner wants them): Coq _CoqProject logical-path resolution + dependency-ordered compilation; Mizar local-article prel export (miz2prel); Isabelle session-qualified imports + multi-session builds; and the arghda-studio visual layer that consumes the frozen reason/0.1 JSON.",
 ]
 
 [maintenance-status]
