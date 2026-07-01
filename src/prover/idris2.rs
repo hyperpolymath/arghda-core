@@ -149,6 +149,10 @@ impl Backend for Idris2 {
     fn lint_rules(&self, _cfg: &RuleConfig) -> Result<Vec<Box<dyn LintRule>>> {
         Ok(vec![Box::new(Idris2EscapeHatch)])
     }
+
+    fn command(&self) -> &'static str {
+        "idris2"
+    }
 }
 
 fn tail(s: &str, n: usize) -> String {

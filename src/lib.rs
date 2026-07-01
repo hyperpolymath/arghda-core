@@ -31,7 +31,7 @@ pub use event::{Event, EventKind};
 pub use graph::{build as build_graph, ImportGraph};
 pub use lint::{default_rules, rules_with_config, run_lints, LintRule, RuleConfig};
 pub use prover::{
-    default_backend, Agda, AgdaCubical, Backend, BackendKind, Idris2, Outcome, Smt, Verdict,
+    default_backend, Agda, AgdaCubical, Backend, BackendKind, Idris2, Outcome, Probe, Smt, Verdict,
 };
 pub use reason::{build as build_reason, Junct, ReasonDocument, ReasonEdge, ReasonNode};
 pub use workspace::{StaleEntry, State, Workspace};

@@ -81,6 +81,10 @@ impl Backend for Agda {
     fn lint_rules(&self, cfg: &RuleConfig) -> Result<Vec<Box<dyn LintRule>>> {
         rules_with_config(cfg)
     }
+
+    fn command(&self) -> &'static str {
+        "agda"
+    }
 }
 
 impl Backend for AgdaCubical {
@@ -124,6 +128,11 @@ impl Backend for AgdaCubical {
 
     fn lint_rules(&self, cfg: &RuleConfig) -> Result<Vec<Box<dyn LintRule>>> {
         agda_cubical_rules(cfg)
+    }
+
+    fn command(&self) -> &'static str {
+        // Same binary as standard Agda; the mode is the `--cubical` flag.
+        "agda"
     }
 }
 
@@ -194,6 +203,20 @@ mod tests {
         assert_eq!(AgdaCubical.extensions(), &["agda"]);
         // The distinguishing fact: cubical is --safe but NOT --without-K.
         assert_eq!(AgdaCubical.safe_mode(), Some("--cubical --safe"));
+    }
+
+    #[test]
+    fn command_and_probe_are_honest() {
+        // Both Agda profiles run the same binary; the mode is a flag.
+        assert_eq!(Agda.command(), "agda");
+        assert_eq!(AgdaCubical.command(), "agda");
+        // probe() reports availability honestly, whether or not agda is here.
+        let p = Agda.probe();
+        assert_eq!(p.backend, "agda");
+        assert_eq!(p.kind, BackendKind::Assistant);
+        assert!(!p.detail.is_empty());
+        // agda-cubical probes the same binary, so agrees on runnability.
+        assert_eq!(AgdaCubical.probe().runnable, p.runnable);
     }
 
     #[test]

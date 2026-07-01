@@ -4,8 +4,8 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, build_reason, event, run_lints, unused, watcher, Agda, AgdaCubical, Backend, Idris2,
-    LintRule, RuleConfig, Smt, State, Workspace,
+    build_dag, build_reason, event, run_lints, unused, watcher, Agda, AgdaCubical, Backend,
+    BackendKind, Idris2, LintRule, RuleConfig, Smt, State, Workspace,
 };
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
@@ -14,6 +14,9 @@ use walkdir::WalkDir;
 
 /// A lint pack (boxed trait objects).
 type RuleSet = Vec<Box<dyn LintRule>>;
+
+/// Every backend `--backend` accepts and `doctor` probes.
+const KNOWN_BACKENDS: &[&str] = &["agda", "agda-cubical", "idris2", "z3", "cvc5"];
 
 /// Resolve a `--backend` name to a backend instance. Agda is the default and
 /// v0.1 reference; Idris2 is the estate ABI language.
@@ -156,6 +159,12 @@ enum Cmd {
     },
     /// Watch `inbox/` and `working/` in a workspace; print events.
     Watch { workspace: PathBuf },
+    /// Probe which prover/solver backends are actually runnable here.
+    Doctor {
+        /// Emit the probe results as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -237,6 +246,33 @@ fn main() -> Result<()> {
             invalidate,
         } => stale(&workspace, invalidate)?,
         Cmd::Watch { workspace } => watch(&workspace)?,
+        Cmd::Doctor { json } => doctor(json)?,
+    }
+    Ok(())
+}
+
+/// Probe every known backend and report which are actually runnable.
+fn doctor(json: bool) -> Result<()> {
+    let probes = KNOWN_BACKENDS
+        .iter()
+        .map(|name| backend_for(name).map(|b| b.probe()))
+        .collect::<Result<Vec<_>>>()?;
+
+    if json {
+        let payload = serde_json::json!({ "version": "0.1", "backends": probes });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("arghda doctor — backend availability");
+        for p in &probes {
+            let mark = if p.runnable { "OK" } else { "--" };
+            let kind = match p.kind {
+                BackendKind::Assistant => "assistant",
+                BackendKind::Solver => "solver",
+            };
+            println!("  [{mark}] {:<13} {:<10} {}", p.backend, kind, p.detail);
+        }
+        let runnable = probes.iter().filter(|p| p.runnable).count();
+        println!("\n{}/{} backends runnable", runnable, probes.len());
     }
     Ok(())
 }
