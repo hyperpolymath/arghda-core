@@ -4,7 +4,7 @@
 use anyhow::{Context, Result};
 use arghda_core::lint::LintContext;
 use arghda_core::{
-    build_dag, build_reason, event, run_lints, unused, watcher, Agda, Backend, LintRule,
+    build_dag, build_reason, event, run_lints, unused, watcher, Agda, Backend, Idris2, LintRule,
     RuleConfig, State, Workspace,
 };
 use clap::{Parser, Subcommand};
@@ -15,11 +15,21 @@ use walkdir::WalkDir;
 /// A lint pack (boxed trait objects).
 type RuleSet = Vec<Box<dyn LintRule>>;
 
+/// Resolve a `--backend` name to a backend instance. Agda is the default and
+/// v0.1 reference; Idris2 is the estate ABI language.
+fn backend_for(name: &str) -> Result<Box<dyn Backend>> {
+    match name {
+        "agda" => Ok(Box::new(Agda)),
+        "idris2" => Ok(Box::new(Idris2)),
+        other => anyhow::bail!("unknown backend `{other}` (known: agda, idris2)"),
+    }
+}
+
 #[derive(Parser)]
 #[command(
     name = "arghda",
     version,
-    about = "Proof-workspace manager (Agda, v0.1)"
+    about = "Proof-workspace manager for provers/solvers (Agda, Idris2)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -46,6 +56,9 @@ enum Cmd {
         /// `<PATH>/.arghda/config.toml` if present.
         #[arg(long)]
         config: Option<PathBuf>,
+        /// Prover/solver backend to use: `agda` (default) or `idris2`.
+        #[arg(long, default_value = "agda")]
+        backend: String,
         /// Also run the external `agda-unused` analyser and re-emit its
         /// findings as `unused-import` warnings (requires `agda-unused` on
         /// PATH; skipped with a note if absent).
@@ -55,13 +68,16 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Typecheck one file with Agda and lint it; report the verdict.
+    /// Typecheck one file with the backend and lint it; report the verdict.
     Check {
-        /// The `.agda` file to check.
+        /// The source file to check.
         file: PathBuf,
-        /// Agda include root. Defaults to the file's directory.
+        /// Include root (search path). Defaults to the file's directory.
         #[arg(long)]
         include_root: Option<PathBuf>,
+        /// Prover/solver backend to use: `agda` (default) or `idris2`.
+        #[arg(long, default_value = "agda")]
+        backend: String,
         /// Emit the report as JSON.
         #[arg(long)]
         json: bool,
@@ -82,6 +98,9 @@ enum Cmd {
         /// `<PATH>/.arghda/config.toml` if present.
         #[arg(long)]
         config: Option<PathBuf>,
+        /// Prover/solver backend to use: `agda` (default) or `idris2`.
+        #[arg(long, default_value = "agda")]
+        backend: String,
     },
     /// Emit the Flying-Logic reasoning graph (JSON) for the tree at PATH:
     /// the DAG plus a demote-only verdict propagation. Without `--check`,
@@ -102,6 +121,9 @@ enum Cmd {
         /// `<PATH>/.arghda/config.toml` if present.
         #[arg(long)]
         config: Option<PathBuf>,
+        /// Prover/solver backend to use: `agda` (default) or `idris2`.
+        #[arg(long, default_value = "agda")]
+        backend: String,
         /// Run the backend on every node to populate REAL prover verdicts
         /// (honest exit codes). Slower — typechecks each module. Off by
         /// default, in which case clean nodes are `unknown`.
@@ -143,6 +165,7 @@ fn main() -> Result<()> {
             entry,
             headline_pattern,
             config,
+            backend,
             unused,
             json,
         } => scan(
@@ -150,36 +173,42 @@ fn main() -> Result<()> {
             &entry,
             headline_pattern.as_deref(),
             config.as_deref(),
+            &backend,
             unused,
             json,
         )?,
         Cmd::Check {
             file,
             include_root,
+            backend,
             json,
-        } => check(&file, include_root.as_deref(), json)?,
+        } => check(&file, include_root.as_deref(), &backend, json)?,
         Cmd::Dag {
             path,
             entry,
             headline_pattern,
             config,
+            backend,
         } => dag(
             &path,
             &entry,
             headline_pattern.as_deref(),
             config.as_deref(),
+            &backend,
         )?,
         Cmd::Reason {
             path,
             entry,
             headline_pattern,
             config,
+            backend,
             check,
         } => reason(
             &path,
             &entry,
             headline_pattern.as_deref(),
             config.as_deref(),
+            &backend,
             check,
         )?,
         Cmd::Claim { workspace, file } => {
@@ -212,12 +241,18 @@ fn scan(
     entry: &[PathBuf],
     headline_pattern: Option<&str>,
     config: Option<&Path>,
+    backend_name: &str,
     unused: bool,
     json: bool,
 ) -> Result<()> {
-    let backend = Agda;
-    let (roots, rules, _cfg) =
-        resolve_roots_and_rules(include_root, entry, headline_pattern, config, &backend)?;
+    let backend = backend_for(backend_name)?;
+    let (roots, rules, _cfg) = resolve_roots_and_rules(
+        include_root,
+        entry,
+        headline_pattern,
+        config,
+        backend.as_ref(),
+    )?;
     let ctx = LintContext {
         include_root,
         entry_modules: &roots,
@@ -303,7 +338,7 @@ fn scan(
     Ok(())
 }
 
-fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
+fn check(file: &Path, include_root: Option<&Path>, backend_name: &str, json: bool) -> Result<()> {
     if !file.is_file() {
         anyhow::bail!("file not found: {}", file.display());
     }
@@ -318,7 +353,7 @@ fn check(file: &Path, include_root: Option<&Path>, json: bool) -> Result<()> {
 
     // The orphan rule self-skips when the file is its own root, which is
     // exactly what a single-file check wants.
-    let backend = Agda;
+    let backend = backend_for(backend_name)?;
     let rules = backend.lint_rules(&RuleConfig::default())?;
     let roots = [file.to_path_buf()];
     let ctx = LintContext {
@@ -377,16 +412,22 @@ fn dag(
     entry: &[PathBuf],
     headline_pattern: Option<&str>,
     config: Option<&Path>,
+    backend_name: &str,
 ) -> Result<()> {
-    let backend = Agda;
-    let (roots, rules, cfg) =
-        resolve_roots_and_rules(include_root, entry, headline_pattern, config, &backend)?;
+    let backend = backend_for(backend_name)?;
+    let (roots, rules, cfg) = resolve_roots_and_rules(
+        include_root,
+        entry,
+        headline_pattern,
+        config,
+        backend.as_ref(),
+    )?;
     let doc = build_dag(
         include_root,
         &roots,
         &rules,
         &cfg.headline_pattern,
-        &backend,
+        backend.as_ref(),
     )?;
     println!("{}", serde_json::to_string_pretty(&doc)?);
     Ok(())
@@ -397,17 +438,23 @@ fn reason(
     entry: &[PathBuf],
     headline_pattern: Option<&str>,
     config: Option<&Path>,
+    backend_name: &str,
     do_check: bool,
 ) -> Result<()> {
-    let backend = Agda;
-    let (roots, rules, cfg) =
-        resolve_roots_and_rules(include_root, entry, headline_pattern, config, &backend)?;
+    let backend = backend_for(backend_name)?;
+    let (roots, rules, cfg) = resolve_roots_and_rules(
+        include_root,
+        entry,
+        headline_pattern,
+        config,
+        backend.as_ref(),
+    )?;
     let dag_doc = build_dag(
         include_root,
         &roots,
         &rules,
         &cfg.headline_pattern,
-        &backend,
+        backend.as_ref(),
     )?;
 
     // Real prover verdicts by module id. Empty unless `--check`, in which
@@ -426,7 +473,7 @@ fn reason(
         }
     }
 
-    let doc = build_reason(dag_doc, &backend, &verdicts, &stale);
+    let doc = build_reason(dag_doc, backend.as_ref(), &verdicts, &stale);
     println!("{}", serde_json::to_string_pretty(&doc)?);
     Ok(())
 }

@@ -30,6 +30,6 @@ pub use diagnostic::{Diagnostic, LintReport, Severity};
 pub use event::{Event, EventKind};
 pub use graph::{build as build_graph, ImportGraph};
 pub use lint::{default_rules, rules_with_config, run_lints, LintRule, RuleConfig};
-pub use prover::{default_backend, Agda, Backend, BackendKind, Outcome, Verdict};
+pub use prover::{default_backend, Agda, Backend, BackendKind, Idris2, Outcome, Verdict};
 pub use reason::{build as build_reason, Junct, ReasonDocument, ReasonEdge, ReasonNode};
 pub use workspace::{StaleEntry, State, Workspace};

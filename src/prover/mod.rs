@@ -27,8 +27,10 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 pub mod agda;
+pub mod idris2;
 
 pub use agda::Agda;
+pub use idris2::Idris2;
 
 /// The two backend interaction models.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
