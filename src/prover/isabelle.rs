@@ -23,11 +23,14 @@
 //! Theory names map to files like every other assistant (`Foo` ↔ `Foo.thy`),
 //! so [`crate::graph::module_name_of`] is reused (a flat tree's dotted name is
 //! just the theory stem). Import edges come from the header `imports` clause
-//! (`theory Foo imports Bar Baz begin`). Roots are the theories a `ROOT` file
-//! lists under a `theories` section — the genuine Isabelle entry-point
-//! convention (analogue of Agda's `All.agda`). Session-qualified / relative-
-//! path imports and dependency-ordered multi-session builds are documented
-//! follow-ons.
+//! (`theory Foo imports Bar Baz begin`). Flat in-tree imports resolve because
+//! every sibling `.thy` is staged into the session; **session-qualified**
+//! imports (`imports "HOL-Library.FuncSet"`) resolve too — [`session_prefixes`]
+//! collects each qualified import's session (`HOL-Library`) across the staged
+//! theories and emits a `sessions` clause in the generated ROOT, so
+//! `isabelle build` pulls those sessions' heaps. Roots are the theories a
+//! `ROOT` file lists under a `theories` section — the genuine Isabelle
+//! entry-point convention (analogue of Agda's `All.agda`).
 
 use super::{probe_tool_arg, Backend, BackendKind, Outcome, Probe, Verdict};
 use crate::graph;
@@ -94,8 +97,11 @@ impl Backend for Isabelle {
             return Ok(Outcome::unavailable(BackendKind::Assistant));
         }
 
-        // Copy every sibling `.thy` (basename) so in-tree imports resolve,
-        // then ensure the target is present (it may sit outside include_root).
+        // Copy every sibling `.thy` (basename) so flat in-tree imports resolve,
+        // and collect any session-qualified import prefixes (`"HOL-Library.X"`
+        // → session `HOL-Library`) across all staged theories so they can be
+        // declared in the ROOT's `sessions` clause.
+        let mut sessions: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for entry in WalkDir::new(include_root)
             .into_iter()
             .filter_map(|e| e.ok())
@@ -105,11 +111,26 @@ impl Backend for Isabelle {
                 if let Some(name) = p.file_name() {
                     let _ = fs::copy(p, session_dir.join(name));
                 }
+                if let Ok(s) = fs::read_to_string(p) {
+                    sessions.extend(session_prefixes(&s));
+                }
             }
         }
         let _ = fs::copy(file, session_dir.join(format!("{stem}.thy")));
+        let src_for_sessions = fs::read_to_string(file).unwrap_or_default();
+        sessions.extend(session_prefixes(&src_for_sessions));
 
-        let root = format!("session \"ArghdaCheck\" = \"HOL\" +\n  theories\n    {stem}\n");
+        // Generate the ROOT: base HOL, a `sessions` clause for every qualified
+        // import prefix (so `isabelle build` can pull those sessions), then the
+        // target theory.
+        let mut root = String::from("session \"ArghdaCheck\" = \"HOL\" +\n");
+        if !sessions.is_empty() {
+            root.push_str("  sessions\n");
+            for s in &sessions {
+                root.push_str(&format!("    \"{s}\"\n"));
+            }
+        }
+        root.push_str(&format!("  theories\n    {stem}\n"));
         if fs::write(session_dir.join("ROOT"), root).is_err() {
             let _ = fs::remove_dir_all(&session_dir);
             return Ok(Outcome::unavailable(BackendKind::Assistant));
@@ -241,6 +262,26 @@ fn parse_imports(contents: &str) -> Vec<String> {
     out
 }
 
+/// The session qualifiers of a theory's `imports` clause: for each
+/// session-qualified import `"Session.Theory"` (a dotted name — Isabelle
+/// session names are themselves dot-free, so the session is the segment before
+/// the first `.`), yield `Session`. Bare theory names (`Main`, a flat sibling)
+/// have no dot and contribute nothing. These become the ROOT's `sessions`
+/// clause so `isabelle build` can pull the imported session's heap.
+fn session_prefixes(contents: &str) -> Vec<String> {
+    parse_imports(contents)
+        .into_iter()
+        .filter_map(|imp| {
+            let (pre, rest) = imp.split_once('.')?;
+            if pre.is_empty() || rest.is_empty() {
+                None
+            } else {
+                Some(pre.to_string())
+            }
+        })
+        .collect()
+}
+
 /// Normalise an `imports`/`ROOT` theory token to a bare theory name: strip
 /// quotes, then take the final path segment (`"../Other/Baz"` → `Baz`).
 fn theory_token(tok: &str) -> String {
@@ -351,6 +392,21 @@ mod tests {
         );
         // `keywords` terminates the imports clause.
         assert!(!imports.iter().any(|i| i == "x"));
+    }
+
+    #[test]
+    fn session_prefixes_only_from_qualified_imports() {
+        // A session-qualified import contributes its session; bare theory names
+        // (Main, a flat sibling) do not.
+        let thy = "theory Q\n  imports Main Foo \"HOL-Library.FuncSet\" \"HOL-Analysis.Derivative\"\nbegin\nend\n";
+        let mut ps = session_prefixes(thy);
+        ps.sort();
+        assert_eq!(
+            ps,
+            vec!["HOL-Analysis".to_string(), "HOL-Library".to_string()]
+        );
+        // No qualified imports ⇒ no sessions.
+        assert!(session_prefixes("theory T imports Main Bar begin end\n").is_empty());
     }
 
     #[test]
