@@ -27,8 +27,11 @@
 //! so [`crate::graph::module_name_of`] is reused. Import edges come from the
 //! `environ` block's directives (`vocabularies`/`notations`/`theorems`/…),
 //! lower-cased to match the on-disk stem; only in-tree articles become edges
-//! (the MML is external). Local-article prel export (`miz2prel`) and a root
-//! convention are documented follow-ons.
+//! (the MML is external). Local-article cross-references are supported:
+//! [`Backend::check_file`] exports each in-tree dependency in topological order
+//! (accom → verifier → exporter → transfer, populating a local `./prel` the
+//! accommodator reads) before checking the target, so a `theorems X;` on a
+//! sibling article `X` resolves. A session/root convention remains a follow-on.
 
 use super::{probe_tool_arg, Backend, BackendKind, Outcome, Probe, Verdict};
 use crate::graph;
@@ -122,6 +125,25 @@ impl Backend for Mizar {
             }
         }
         let _ = fs::copy(file, work.join(format!("{stem}.miz")));
+
+        // Build the target's in-tree dependencies into a local library so its
+        // `theorems`/`definitions`/… directives resolve: for each dep in
+        // topological order (deps before dependents), run the export pipeline
+        // accom → verifier → exporter → transfer, which populates `./prel` in
+        // the work dir (the accommodator reads local library files from there).
+        // External MML articles are skipped (resolved from MIZFILES). Verdict-
+        // affecting failures surface honestly as a non-empty target `.err`.
+        let src = fs::read_to_string(file).unwrap_or_default();
+        let deps = mizar_transitive_deps(&parse_environ_imports(&src), include_root);
+        for dep in &deps {
+            for tool in ["accom", "verifier", "exporter", "transfer"] {
+                let _ = Command::new(tool)
+                    .arg(dep)
+                    .current_dir(&work)
+                    .env("MIZFILES", &mizfiles)
+                    .output();
+            }
+        }
 
         // Step 1: accommodate the environment.
         let accom = Command::new("accom")
@@ -221,6 +243,40 @@ impl Backend for Mizar {
         // Mizar's version query is `verifier -v` (prints the banner).
         probe_tool_arg(self.name(), self.kind(), self.command(), "-v")
     }
+}
+
+/// The in-tree transitive article dependencies of a Mizar file, given the
+/// articles its `environ` block references, in dependency-first (topological)
+/// order — so exporting the list left-to-right satisfies every later `accom`.
+/// External MML articles (absent under `include_root`) are skipped. Cycle-safe
+/// via the visited set.
+fn mizar_transitive_deps(direct: &[String], include_root: &Path) -> Vec<String> {
+    let mut visited = std::collections::HashSet::new();
+    let mut order = Vec::new();
+    for m in direct {
+        mizar_visit_dep(m, include_root, &mut visited, &mut order);
+    }
+    order
+}
+
+fn mizar_visit_dep(
+    module: &str,
+    include_root: &Path,
+    visited: &mut std::collections::HashSet<String>,
+    order: &mut Vec<String>,
+) {
+    if !visited.insert(module.to_string()) {
+        return;
+    }
+    // Only in-tree articles resolve to a readable `.miz`; MML articles are
+    // left for MIZFILES.
+    let Ok(src) = fs::read_to_string(include_root.join(format!("{module}.miz"))) else {
+        return;
+    };
+    for imp in parse_environ_imports(&src) {
+        mizar_visit_dep(&imp, include_root, visited, order);
+    }
+    order.push(module.to_string());
 }
 
 /// Extract the articles referenced by a Mizar `environ` block's directives
@@ -328,6 +384,25 @@ mod tests {
     fn mizar_has_no_lint_rules() {
         // Mizar has no admit/sorry construct — the lint pack is empty by design.
         assert!(Mizar.lint_rules(&RuleConfig::default()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn transitive_deps_are_topologically_ordered() {
+        // z requires y; y requires x; x is a leaf. Build order for z must be
+        // [x, y] (deps before dependents); MML refs are skipped.
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        std::fs::write(r.join("x.miz"), "environ\nbegin\n").unwrap();
+        std::fs::write(r.join("y.miz"), "environ\n theorems X;\nbegin\n").unwrap();
+        std::fs::write(r.join("z.miz"), "environ\n theorems Y, XBOOLE_0;\nbegin\n").unwrap();
+        let deps =
+            mizar_transitive_deps(&parse_environ_imports("environ\n theorems Z;\nbegin\n"), r);
+        assert_eq!(
+            deps,
+            vec!["x".to_string(), "y".to_string(), "z".to_string()]
+        );
+        // The MML article is not staged as an in-tree dep.
+        assert!(!deps.iter().any(|m| m == "xboole_0"));
     }
 
     #[test]
