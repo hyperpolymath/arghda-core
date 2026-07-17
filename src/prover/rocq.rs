@@ -9,8 +9,9 @@
 //! that declares `Axiom`/`Parameter`/`Conjecture` postulates — all exit 0.
 //! So the honest verdict, ground-truthed against Coq 8.18.0, is:
 //! * exit non-zero → [`Verdict::Error`] (the kernel rejected something, or an
-//!   import could not be resolved — a bare single-file `coqc` cannot build a
-//!   dependency chain; that is a documented limitation, not a proof).
+//!   in-tree dependency failed to build — see the dependency-ordered build
+//!   below; a genuinely unresolved external import is an honest error, not a
+//!   proof).
 //! * exit 0, source contains `Admitted`/`admit` → [`Verdict::Admitted`] (an
 //!   unfinished proof rode along on a green compile).
 //! * exit 0, source contains a genuine unverified postulate → [`Verdict::Postulated`].
@@ -34,10 +35,14 @@
 //! Import edges come only from `Require` (with or without `Import`/`Export`,
 //! and the `From P Require …` form); a bare `Import`/`Export` is a namespace
 //! directive, not a dependency edge (as Lean's `open` is), so it is ignored.
-//! `_CoqProject`-driven logical-path resolution and dependency-ordered
-//! compilation are documented follow-ons; this baseline compiles a single
-//! file with `-R <root> ""` and honestly reports `Error` when a dependency it
-//! cannot build is required.
+//! Dependency-ordered compilation: [`Backend::check_file`] stages the target
+//! and its in-tree transitive `Require` deps into a temp build tree, compiles
+//! the deps in topological order (so each `Require`d sibling has its `.vo`),
+//! then checks the target against the same load path — all under temp, so the
+//! source tree stays clean. External (stdlib/MML) requires resolve on coqc's
+//! own load path. `_CoqProject`-driven logical-path remapping (custom `-Q`/`-R`
+//! prefixes) remains a documented follow-on; this uses the empty-prefix
+//! convention (`Foo.Bar` ↔ `Foo/Bar.v` under the root).
 
 use super::{Backend, BackendKind, Outcome, Verdict};
 use crate::graph;
@@ -76,39 +81,61 @@ impl Backend for Coq {
     }
 
     fn check_file(&self, file: &Path, include_root: &Path) -> Result<Outcome> {
-        // Redirect the compiled `.vo` into a temp *directory* so the source
-        // tree stays clean, and map the include root to the empty logical
-        // prefix so a sibling `Require` at least has a chance to resolve.
-        // `coqc -o` insists the target basename equal the source's (only the
-        // directory may differ), so keep the stem and vary the directory.
+        // Stage the target and its in-tree `Require` dependencies into a temp
+        // build tree, compile the deps in topological order (deps before
+        // dependents) so each `Require`d sibling has its `.vo`, then check the
+        // target against the same load path. The whole build happens under
+        // temp, so the source tree stays clean. External (stdlib/MML) requires
+        // are left for coqc's own load path.
+        let src = fs::read_to_string(file).unwrap_or_default();
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let out_dir =
+        let build =
             std::env::temp_dir().join(format!("arghda-coq-{}-{}", std::process::id(), nanos));
-        let _ = fs::create_dir_all(&out_dir);
-        let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("Check");
-        let vo_out = out_dir.join(format!("{stem}.vo"));
+        if fs::create_dir_all(&build).is_err() {
+            return Ok(Outcome::unavailable(BackendKind::Assistant));
+        }
 
-        let output = Command::new("coqc")
-            .arg("-q") // ignore any coqrc
-            .arg("-no-glob") // don't drop a .glob next to the source
-            .arg("-R")
-            .arg(include_root)
-            .arg("")
-            .arg("-o")
-            .arg(&vo_out)
-            .arg(file)
-            .output();
+        // The target's module name (relative to the include root), and its
+        // in-tree transitive Require deps in dependency-first order.
+        let target_module = self.module_name_of(file, include_root).unwrap_or_else(|| {
+            file.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Check")
+                .into()
+        });
+        let deps = coq_transitive_deps(&parse_requires(&src), include_root);
 
-        let _ = fs::remove_dir_all(&out_dir);
+        // Stage every dep + the target into the build tree at its module path.
+        for m in &deps {
+            let dst = coq_module_path(m, &build);
+            if let Some(parent) = dst.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::copy(coq_module_path(m, include_root), dst);
+        }
+        let target_dst = coq_module_path(&target_module, &build);
+        if let Some(parent) = target_dst.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::copy(file, &target_dst);
+
+        // Compile the deps first (best-effort: a dep that fails to build
+        // surfaces honestly as a `Require` error when the target is checked).
+        for m in &deps {
+            let _ = coqc_build(&coq_module_path(m, &build), &build);
+        }
+
+        // Check the target against the built deps.
+        let output = coqc_build(&target_dst, &build);
+        let _ = fs::remove_dir_all(&build);
 
         match output {
             Ok(out) => {
                 let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
                 combined.push_str(&String::from_utf8_lossy(&out.stderr));
-                let src = fs::read_to_string(file).unwrap_or_default();
                 let verdict = coq_verdict(&src, out.status.success());
                 Ok(Outcome {
                     available: true,
@@ -131,12 +158,7 @@ impl Backend for Coq {
     }
 
     fn module_to_path(&self, module: &str, include_root: &Path) -> PathBuf {
-        let mut p = include_root.to_path_buf();
-        for part in module.split('.') {
-            p.push(part);
-        }
-        p.set_extension("v");
-        p
+        coq_module_path(module, include_root)
     }
 
     fn direct_imports(&self, file: &Path) -> Result<Vec<String>> {
@@ -173,6 +195,65 @@ impl Backend for Coq {
     fn command(&self) -> &'static str {
         "coqc"
     }
+}
+
+/// Dotted Coq logical name → file path under `root` (`Foo.Bar` → `Foo/Bar.v`).
+fn coq_module_path(module: &str, root: &Path) -> PathBuf {
+    let mut p = root.to_path_buf();
+    for part in module.split('.') {
+        p.push(part);
+    }
+    p.set_extension("v");
+    p
+}
+
+/// Compile one staged `.v` under the build tree, mapping the build root to the
+/// empty logical prefix so in-tree `Require`s resolve against the `.vo`s built
+/// alongside. `-no-glob` keeps the tree free of `.glob` output.
+fn coqc_build(file: &Path, build_root: &Path) -> std::io::Result<std::process::Output> {
+    Command::new("coqc")
+        .arg("-q")
+        .arg("-no-glob")
+        .arg("-R")
+        .arg(build_root)
+        .arg("")
+        .arg(file)
+        .output()
+}
+
+/// The in-tree transitive `Require` dependencies of a file, given its direct
+/// imports, in dependency-first (topological) order — deps appear before the
+/// modules that require them, so compiling the list left-to-right satisfies
+/// every `Require`. External modules (stdlib/MML, absent under `include_root`)
+/// are skipped. Cycle-safe via the visited set (Coq forbids import cycles, but
+/// a half-edited file could transiently produce one).
+fn coq_transitive_deps(direct: &[String], include_root: &Path) -> Vec<String> {
+    let mut visited = std::collections::HashSet::new();
+    let mut order = Vec::new();
+    for m in direct {
+        coq_visit_dep(m, include_root, &mut visited, &mut order);
+    }
+    order
+}
+
+fn coq_visit_dep(
+    module: &str,
+    include_root: &Path,
+    visited: &mut std::collections::HashSet<String>,
+    order: &mut Vec<String>,
+) {
+    if !visited.insert(module.to_string()) {
+        return;
+    }
+    // Only in-tree modules resolve to a readable file; external ones are left
+    // for coqc's own load path.
+    let Ok(src) = fs::read_to_string(coq_module_path(module, include_root)) else {
+        return;
+    };
+    for imp in parse_requires(&src) {
+        coq_visit_dep(&imp, include_root, visited, order);
+    }
+    order.push(module.to_string());
 }
 
 /// Map Coq source + exit status to a [`Verdict`], honestly: a green compile is
@@ -522,6 +603,25 @@ End OrderedField.\n";
         );
         // Bare `Parameter foo.` with no type is an unknown shape ⇒ counted.
         assert_eq!(count_genuine_postulates("Parameter foo.\n"), 1);
+    }
+
+    #[test]
+    fn transitive_deps_are_topologically_ordered() {
+        // C requires B; B requires A; A is a leaf. The build order for C must
+        // be [A, B] (deps before dependents); external requires are skipped.
+        let tmp = tempfile::tempdir().unwrap();
+        let r = tmp.path();
+        std::fs::write(r.join("A.v"), "Definition a : nat := 0.\n").unwrap();
+        std::fs::write(r.join("B.v"), "Require Import A.\nDefinition b := a.\n").unwrap();
+        std::fs::write(
+            r.join("C.v"),
+            "Require Import B.\nRequire Import Coq.Lists.List.\nDefinition c := b.\n",
+        )
+        .unwrap();
+        let deps = coq_transitive_deps(&parse_requires("Require Import B.\n"), r);
+        assert_eq!(deps, vec!["A".to_string(), "B".to_string()]);
+        // The external stdlib require is not staged as an in-tree dep.
+        assert!(!deps.iter().any(|m| m.contains("List")));
     }
 
     #[test]
