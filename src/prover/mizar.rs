@@ -374,6 +374,74 @@ mod tests {
     }
 
     #[test]
+    fn definitions_directive_parsed_and_lowercased() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "environ\n\
+             definitions FUNCT_1, RELAT_1;\n\
+             begin\n\
+             definition\n\
+               let X;\n\
+               func id X -> Function of X,X := id X;\n\
+             end;\n",
+        )
+        .unwrap();
+        let imports = Mizar.direct_imports(tmp.path()).unwrap();
+        assert!(imports.contains(&"funct_1".to_string()));
+        assert!(imports.contains(&"relat_1".to_string()));
+        // `definitions` keyword is not an import.
+        assert!(!imports.iter().any(|i| i == "definitions"));
+    }
+
+    #[test]
+    fn all_environ_directives_parsed() {
+        // Test that all ENVIRON_DIRECTIVES are correctly skipped (not imported).
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            tmp.path(),
+            "environ\n\
+             vocabularies VOCAB;\n\
+             notations NOT;\n\
+             constructors CONS;\n\
+             registrations REG;\n\
+             definitions DEF;\n\
+             expansions EXP;\n\
+             equalities EQ;\n\
+             theorems THM;\n\
+             schemes SCH;\n\
+             requirements REQ;\n\
+             begin\n",
+        )
+        .unwrap();
+        let imports = Mizar.direct_imports(tmp.path()).unwrap();
+        // Verify that all directives are present as imports (lowercased).
+        assert!(imports.contains(&"vocab".to_string()));
+        assert!(imports.contains(&"not".to_string()));
+        assert!(imports.contains(&"cons".to_string()));
+        assert!(imports.contains(&"reg".to_string()));
+        assert!(imports.contains(&"def".to_string()));
+        assert!(imports.contains(&"exp".to_string()));
+        assert!(imports.contains(&"eq".to_string()));
+        assert!(imports.contains(&"thm".to_string()));
+        assert!(imports.contains(&"sch".to_string()));
+        assert!(imports.contains(&"req".to_string()));
+        // Verify that keyword directives themselves are not imported.
+        assert!(!imports.iter().any(|i| {
+            i == "vocabularies"
+                || i == "notations"
+                || i == "constructors"
+                || i == "registrations"
+                || i == "definitions"
+                || i == "expansions"
+                || i == "equalities"
+                || i == "theorems"
+                || i == "schemes"
+                || i == "requirements"
+        }));
+    }
+
+    #[test]
     fn no_environ_yields_no_imports() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(tmp.path(), "begin\ntheorem X;\n").unwrap();
