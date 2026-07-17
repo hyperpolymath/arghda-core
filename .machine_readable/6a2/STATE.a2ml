@@ -50,7 +50,7 @@ milestones = [
   { name = "M7: Echidna dispatch seam (optional route to orchestrator :8090, same Outcome)", completion = 70 },
   { name = "M8: Coq/Rocq adapter (--heavy provisioning; Section-aware postulate classifier)", completion = 97 },
   { name = "M9: Isabelle adapter (--heavy; dogfood tropical-resource-typing .thy)", completion = 90 },
-  { name = "M10: Mizar adapter (detect-only first; highest uncertainty)", completion = 85 },
+  { name = "M10: Mizar adapter (detect-only first; highest uncertainty)", completion = 95 },
   { name = "M11: studio JSON freeze (reason/0.1) + Groove manifest", completion = 100 },
 ]
 # M0 provisioning verified in-container 2026-07-01: agda 2.6.3 (+stdlib v2.3
@@ -113,6 +113,26 @@ milestones = [
 # +2 unit ipkg-parser incl. sourcedir + no-resolvable-main). Dogfooded: `reason
 # --backend idris2` over an ipkg fixture → crt_roots ['App'], App+Helper wired.
 # M4 now 95% (remaining: totality-hole `?name` + per-def `partial` lint).
+#
+# M10 FOLLOW-ON landed 2026-07-01 (M10 85% → 95%): Mizar local-article cross-
+# references. Was: `theorems X;` on a sibling article errored (X not in the
+# library). GROUND-TRUTHED the export pipeline vs real Mizar 8.1.15: to Require
+# a local X, X must be built into a local library — `accom X; verifier X;
+# exporter X; transfer X` produces X's library files and `transfer` populates a
+# local `./prel` the accommodator reads. check_file now, before checking the
+# target, exports each in-tree transitive dep in TOPOLOGICAL order
+# (`mizar_transitive_deps` = post-order DFS over environ imports, cycle-safe,
+# MML refs skipped) via that 4-tool pipeline in the temp work dir. 175 tests
+# (+1 topo-order unit). DOGFOODED vs real Mizar 8.1.15 (MIZFILES=/opt/mizar):
+# y.miz with `theorems X;` using `by X:1` → proven (was error pre-fix); the
+# honesty case — ybad requiring a BROKEN xbad → error (a broken dep fails the
+# dependent, no false green); reason --check → x/y proven, xbad/ybad error.
+# HONEST SCOPE: the THEOREMS cross-reference path is dogfooded end-to-end. The
+# same accom→verifier→exporter→transfer pipeline is Mizar's standard library
+# build, so definitions/notations/constructors cross-refs travel the same path,
+# but were NOT separately dogfooded (a definitions fixture is finicky to author
+# correctly; not rabbit-holed). Residual 5%: verify definitions/notations
+# cross-refs + a session/root convention.
 #
 # M8 FOLLOW-ON landed 2026-07-01 (M8 90% → 97%): dependency-ordered Coq
 # compilation — multi-file projects are now checkable. Was: a bare `coqc B.v`
@@ -453,7 +473,7 @@ actions = [
   "M9 (Isabelle): DONE (90%) — Isabelle2025 provisioned + adapter built + dogfooded (proven/admitted/postulated/error) via session-build; ROOT-based roots, imports-clause edges. Remaining: session-qualified imports + dependency-ordered multi-session builds.",
   "M10 (Mizar): DONE (85%) — turned out to be a REAL verify, not detect-only: static i386 verifier runs on x86_64; provisioned + adapter (accom+verifier+.err) + dogfooded (proven/error). HEAVY TAIL M8-M10 COMPLETE. Remaining: local-article prel export.",
   "M7 client INVESTIGATED 2026-07-01 → BLOCKED (stub stays): no confirmed Echidna HTTP contract exists (dispatch.rs says API unconfirmed; ECOSYSTEM.a2ml gives no endpoints/schema; the echidna repo is out of this session's access scope). Building a client would mean inventing an unverifiable contract — forbidden. Unblock: a published Echidna API + a reachable instance to dogfood; then wire Dispatch::run behind a cargo feature. ROADMAP TERMINUS — all tractable items done; M7's client is the sole residual, externally blocked.",
-  "HEAVY-TAIL COMPLETION CUTS (owner asked for these 2026-07-01, doing foundation-first, one PR each, real-tool dogfood): [DONE] Coq dependency-ordered compilation (M8 90→97%); [NEXT] Mizar local-article prel export via miz2prel so cross-article refs check (M10 85→~100%); [THEN] Isabelle session-qualified imports + multi-session builds (M9 90→~100%). Residual after: Coq _CoqProject custom -Q/-R prefixes (3%); arghda-studio visual layer (separate repo, out of this session's scope; AffineScript).",
+  "HEAVY-TAIL COMPLETION CUTS (owner asked 2026-07-01, foundation-first, one PR each, real-tool dogfood): [DONE] Coq dependency-ordered compilation (M8 90→97%); [DONE] Mizar local-article cross-refs via accom/verifier/exporter/transfer export pipeline (M10 85→95%, theorems path dogfooded); [NEXT/LAST] Isabelle session-qualified imports + multi-session builds (M9 90→~100%). Residual after: Coq _CoqProject custom -Q/-R prefixes (3%); Mizar definitions/notations cross-refs not separately dogfooded (5%); arghda-studio visual layer (separate repo, out of this session's scope; AffineScript).",
 ]
 
 [maintenance-status]
@@ -462,10 +482,11 @@ last-result = "pass"  # unknown | pass | warn | fail
 open-warnings = 0
 open-failures = 0
 # `just check` (fmt-check + clippy -D warnings + build + test + SPDX) green
-# post-M8-deporder: 131 lib + 43 integration = 174 tests pass. M8 dependency-
-# ordered Coq compilation dogfooded vs real coqc 8.18.0 (A←B←C chain → all
-# proven; transitive admit demotes the dependent's effective verdict, not
-# whitewashed). M4 totality-hole + partial lint dogfooded vs real idris2 0.7.0.
+# post-M10-crossref: 132 lib + 43 integration = 175 tests pass. M10 Mizar
+# local-article cross-refs dogfooded vs real Mizar 8.1.15 (y requires local x →
+# proven; broken dep → dependent error). M8 dependency-ordered Coq compilation
+# dogfooded vs real coqc 8.18.0 (A←B←C chain → all proven; transitive admit
+# demotes the dependent's effective verdict). M4 totality lint dogfooded vs idris2.
 # M6 lake-env import resolution dogfooded vs real Lean 4.13.0 + Lake 5.0.0
 # (imported file in a built lake project → proven; outside → error). codeql.yml added
 # (code-scanning gate fix). M10 Mizar adapter dogfooded vs real Mizar 8.1.15
