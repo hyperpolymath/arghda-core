@@ -622,8 +622,8 @@ reset the 6a2 files from the template's own evolution to ArghDA.
 * *`.well-known/`* — `ai.txt`, `humans.txt`, `security.txt` (RFC 9116).
 * *Docs* — `.adoc` only (no `.md` under `docs/`); the SSG is
   `casket-ssg` (Jekyll banned).
-* *CI hard gates* — `openssf-compliance`, `ts-blocker`,
-  `npm-bun-blocker`, `estate-rules`, `secret-scanner`,
+* *CI hard gates* — `openssf-compliance`,
+  `runtime-policy`, `estate-rules`, `secret-scanner`,
   `security-policy`, `workflow-linter`, `wellknown-enforcement`,
   `scorecard-enforcer` (every workflow: SPDX header, `permissions:`
   block, SHA-pinned actions). The TS/npm blockers are *not* a problem —
