@@ -19,6 +19,6 @@ remove = []   # preset capabilities this repo does NOT have
 no-abi = "language-agnostic engine; no C-ABI/FFI seam, no Idris2 ABI proofs (no abi.ipkg / src/interface/)"
 no-formal-proofs = "consumes Agda — shells out to agda / agda-unused — but contains no in-tree proofs (no verification/proofs/)"
 no-container = "ships a CLI binary, not a container image"
-no-reproducible-build = "cargo build only for now; guix.scm / flake.nix are a future addition, not present"
+no-reproducible-build = "cargo build only for now; guix.scm / flake.guix are a future addition, not present"
 no-affinescript = "pure Rust; the planned AffineScript visual layer is a separate repo (arghda-studio)"
 no-governance-tier = "leaf tool; declines the full AUDIT / AFFIRMATION / GOVERNANCE / MAINTAINERS trio"
