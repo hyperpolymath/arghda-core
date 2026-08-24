@@ -47,7 +47,7 @@ CLI, a library API, and a JSON event stream. Runs in CI, standalone,
 or embedded.
 
 `arghda-panll`:: PanLL presentation layer. Gossamer webview +
-ReScript panel consuming `arghda-core`'s event stream. Lives in the
+AffineScript panel consuming `arghda-core`'s event stream. Lives in the
 PanLL surface, probably adjacent to Pane-W.
 
 Rationale for the split:
