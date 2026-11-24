@@ -1,0 +1,166 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
+= Design note: proven-ness derived from receipts
+:toc: macro
+
+Status: *proposal for owner review*. No code is written yet. This note
+records the problem, the owner's rulings so far, the evidence from two
+experiments, and the questions still open.
+
+toc::[]
+
+== The problem
+
+`docs/arghda-spec.adoc` says a lint hard-block "forbids `working → proven`".
+Two things break that today:
+
+. `arghda promote` is a plain file move (`Workspace::transition`). It runs
+  neither the lint pack nor the prover.
+. `reason::workspace_verdicts` gives `Verdict::Proven` to any file whose
+  basename is in `proven/`. Location is treated as evidence.
+
+Reproduced on 2026-11-24 (agda 2.6.3). A lint-clean module that does not
+typecheck (`x : N; x = Set`) is promoted. `arghda check` on it says
+`rejected`, and `arghda reason proven --workspace ws` reports it, and
+`All` which imports it, as `proven`. Lint caps catch some cases: a promoted
+postulate reads `postulated`, and an edited file reads `unknown` through the
+content-hash closure. But nothing catches a file the prover rejects.
+
+== Owner rulings (2026-11-24)
+
+* Proven-ness is *derived from recorded evidence*. It is never inferred from
+  where a file sits.
+* `proven/` stays as an *untrusted view*: files still move there, and
+  nothing reads the location as evidence.
+* Receipts reuse the *estate receipt schema*: the proof-receipt praxis deed
+  of standards `3-practice/PROOF-POLICY.adoc` §8.5.1. arghda does not invent
+  a format.
+* `arghda check` applies the reasoning graph's lint caps (done in
+  hyperpolymath/arghda-core#66).
+
+== Evidence
+
+Measured in a container with real provers, using the debug build. These are
+synthetic workloads; they do not stand for a real corpus.
+
+.Single-file `arghda check` on a small proven fixture (ms)
+|===
+|Backend |Cold |Re-run |Re-run
+
+|agda |173 |52 |39
+|agda-cubical |61 |41 |50
+|idris2 |712 |709 |625
+|lean4 |484 |237 |257
+|coq |98 |70 |68
+|mizar |17 |9 |11
+|z3 |29 |16 |19
+|cvc5 |29 |13 |8
+|===
+
+.Agda import chain of N modules, `arghda check` on the top module (ms)
+|===
+|N |Cold |Unchanged re-run |After editing the root |After editing the top
+
+|10 |145 |72 |130 |71
+|50 |829 |182 |570 |150
+|200 |13015 |2175 |8752 |2384
+|===
+
+.Deriving instead of re-proving: import graph plus manifest digest (ms)
+|===
+|N |`arghda dag` |sorted `sha256sum` manifest digest
+
+|200 |11 |12
+|1000 |56 |22
+|3000 |135 |48
+|===
+
+Conclusions:
+
+* *Never re-prove to answer "is it proven?"* At 200 modules even an
+  unchanged re-check costs about 2 s, because Agda reloads every interface.
+  A receipt plus a digest comparison costs about 0.2 s at 3000 modules.
+* *Running the prover once at promotion is affordable.* That cost is paid
+  once per change, not on every query.
+* *Not measured yet:* how often "in `proven/`" disagrees with "has a
+  matching receipt" on a real workspace. The echo-types corpus is not
+  reachable from the session that wrote this note. That run is the first
+  step of the implementation PR.
+
+== Design
+
+=== Receipts
+
+`promote` runs `check` and writes a receipt row. A file *is proven* exactly
+when it has a receipt whose state is `current` and which satisfies all of
+the following:
+
+* its `:inputs-sha256` equals the digest of the file's current import cone;
+* its result is `proven` after lint caps (`reason::cap_by_lints`);
+* it records no lint hard-block;
+* its `:checker` names the backend and tool version.
+
+A receipt becomes `stale` when its cone digest no longer matches, which is
+the PROOF-POLICY §8.4 lineage state. `superseded` and `regressed` follow
+§8.4 too. `reason::workspace_verdicts` reads receipts instead of directory
+membership.
+
+The input digest follows §8.5.1 exactly: a manifest with one line per file,
+`<sha256>  <path>`, sorted bytewise, then hashed with SHA-256, using the
+reference `scripts/proof-inputs-sha256.sh`. It replaces arghda's own
+`closure_hash`, so anyone can recompute a receipt with git alone.
+
+=== Fit with the proof-receipt deed, and the gaps
+
+Checked against standards `1-formats/deed/tools/deed_lint.js`:
+
+* *Fits:* receipt fields (`:checker`, `:invocation`, `:inputs-sha256`,
+  `:state`, `(inputs-manifest …)`, `(axioms …)`); lineage states; and
+  `:pwg ungraded`, which the linter accepts. arghda checks files, not theory
+  theorems, so it records no PWG grade (policy §8.1).
+* *Gap 1, uncommitted files.* `:source-commit` and each receipt's
+  `:commit` must be a full 40-character commit. Files in `inbox/` and
+  `working/` are usually uncommitted.
+* *Gap 2, granularity.* A receipt sits in a per-theorem `claim`, while
+  arghda's unit is a file. The proposal is one `claim` per module, with the
+  module name as `:id`.
+
+=== The invariant, and how to prove it
+
+----
+∀ f. derived_proven(f) ⇒ ∃ r ∈ receipts.
+       r.state = current ∧ r.inputs_sha256 = digest(cone(f))
+       ∧ capped(r) = Proven ∧ ¬ r.hard_block
+----
+
+This is the statement to carry as a Creusot contract (Pearlite) and as a
+Verus proof on the derivation function. Neither verifier has been run on
+arghda yet; both scopes are open. The lint-cap step is a monotone
+(deflationary) map on the finite verdict order, so it is idempotent and
+order-independent. That is a small lemma to prove next to it, and
+`cap_by_lints_agrees_with_the_graph` already tests it.
+
+== Open questions for the owner
+
+. *Gap 1.* Which option for uncommitted files?
+.. Write receipts only for committed files: `promote` requires the file to
+   be committed. Strict, and fits the schema unchanged.
+.. Keep a local ledger in the same field vocabulary, keyed by worktree
+   digest, and export a real proof-receipt deed once the file is committed.
+.. Propose a `workspace-receipt` profile upstream in standards: the schema
+   change made at its source (doctrine 14), but outside this repository.
+. *Gap 2.* Is one `claim` per module acceptable as the mapping?
+. *Migration.* What do existing `proven/` files without receipts become:
+  `unknown` until re-promoted, or re-checked once by a migration command?
+. *Where the receipt lives.* Is a workspace receipt a
+  `verification/receipts/*_praxis.deed` in the workspace's own repository, or
+  under `.arghda/`?
+
+== Plan once these are settled
+
+. Measure disagreement on a real workspace (echo-types), using the
+  current-behaviour reproduction above as the test.
+. Receipt writer and reader, with known-answer tests, including the
+  lint-clean-but-rejected case above as a regression test.
+. `promote` gated on `check`; `workspace_verdicts` reading receipts.
+. Creusot (Pearlite) and Verus scopes for the invariant, recorded in
+  `docs/status/PROOF-STATUS.adoc`.
