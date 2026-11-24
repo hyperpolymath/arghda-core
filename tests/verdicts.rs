@@ -169,14 +169,14 @@ fn idris2_verdicts() {
 
 /// Like Agda, the Idris2 backend is exit-code only (`src/prover/idris2.rs`):
 /// `idris2 --check` accepts a file with an unsolved hole, so the backend says
-/// `Proven`, and the hole is surfaced only by the `escape-hatch` lint. That
-/// lint is a WARN, so `arghda check` reports such a file as
-/// `proven-eligible`; only the reason graph caps it at `Admitted`
-/// (`reason::lint_cap`). This test pins the current facts; it does not
-/// claim the `check` verdict is right for a holed file.
+/// `Proven`, and the hole is surfaced by the warn-level `escape-hatch` lint.
+/// `arghda check` applies the reasoning graph's lint caps
+/// (`reason::cap_by_lints`), so its overall verdict for the file is
+/// `admitted`, not `proven-eligible`. This pins all three facts end to end,
+/// running the real `arghda` binary.
 #[test]
 #[ignore = "needs the real provers; run with `just verdicts`"]
-fn idris2_hole_is_green_to_the_tool_and_only_warned_by_lint() {
+fn idris2_hole_is_green_to_the_tool_but_admitted_by_check() {
     if !check_case(&Idris2, "admitted-hole", Verdict::Proven) {
         return;
     }
@@ -185,6 +185,17 @@ fn idris2_hole_is_green_to_the_tool_and_only_warned_by_lint() {
         rules.iter().any(|r| r == "escape-hatch"),
         "lint rules fired: {rules:?}"
     );
+    let tmp = tempfile::tempdir().unwrap();
+    let file = stage(&case_dir("idris2", "admitted-hole"), tmp.path());
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_arghda"))
+        .args(["check", "--backend", "idris2", "--json"])
+        .arg(&file)
+        .output()
+        .unwrap();
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stdout).unwrap_or_else(|e| panic!("check --json output: {e}"));
+    assert_eq!(json["backend"]["verdict"], "proven", "{json}");
+    assert_eq!(json["verdict"], "admitted", "{json}");
 }
 
 #[test]
