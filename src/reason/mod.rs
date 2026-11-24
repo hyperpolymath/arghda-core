@@ -154,7 +154,7 @@ fn lint_cap(rule: &str) -> Option<Verdict> {
 }
 
 /// Demote a prover verdict by every soundness cap the given lint rules
-/// impose (see [`lint_cap`]). `arghda check` uses this; the reasoning
+/// impose (see `lint_cap`). `arghda check` uses this; the reasoning
 /// graph's `self_verdict_of` applies the same `lint_cap` + `demote` while
 /// also recording evidence, and `cap_by_lints_agrees_with_the_graph` pins
 /// the two to the same result, so an Idris2 `?hole` or an Agda
