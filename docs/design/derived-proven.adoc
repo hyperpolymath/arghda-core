@@ -114,9 +114,16 @@ instead of directory membership.
 
 The input digest follows §8.5.1 exactly: a manifest with one line per file,
 `<sha256>  <path>`, with the lines sorted by *path* in bytewise (C locale)
-order, then hashed with SHA-256, using the reference
-`scripts/proof-inputs-sha256.sh`. It replaces arghda's own `closure_hash`,
-so anyone can recompute a receipt with git alone.
+order, then hashed with SHA-256, using the reference implementation
+`scripts/proof-inputs-sha256.sh` in `metadatastician/standards` (last
+changed at `2c7467bde91bf35d6a26d1838154db50680d3cdb`; an implementation
+must pin the commit it follows, since the script at HEAD can change). It
+replaces arghda's own `closure_hash`, so anyone can recompute a receipt with
+git alone.
+
+The standards files this note was checked against (PROOF-POLICY §8.5.1 and
+`1-formats/deed/tools/deed_lint.js`) were read at
+`metadatastician/standards@f7c5e201f78f822f0711762a231e69867e8d4a59`.
 
 === Binding the result to its inputs
 
@@ -159,9 +166,20 @@ Checked against standards `1-formats/deed/tools/deed_lint.js`:
   `:reason`, `:image`, and the `(axioms …)`, `(inputs-manifest …)` and
   `(import …)` clauses. The linter rejects any other field. A receipt
   therefore cannot record that the lint pack ran and found no hard block,
-  and a clean result cannot be told apart from missing lint evidence. Where
-  that evidence lives, and how it is validated, must be decided before the
-  receipt rule above can be implemented.
+  and a clean result cannot be told apart from missing lint evidence.
+  Nor does a receipt record a *verdict*: `:state` is lineage (`current`,
+  `stale`, `superseded`, `regressed`), so a `current` receipt does not by
+  itself show the check was `proven`. The receipt rule above cannot be
+  evaluated from a receipt until one of these is chosen:
+  ** add fields for the lint-capped verdict and for any lint hard block
+     (an upstream change to the proof-receipt profile); or
+  ** write a receipt only for a check whose lint-capped verdict is
+     `proven` with no hard block, and have every reader enforce that rule
+     (the receipt's existence then carries the verdict, which a reader
+     cannot verify on its own).
+
+  Which, and where the evidence is validated, must be decided before the
+  receipt rule can be implemented.
 
 === The invariant, and how to prove it
 

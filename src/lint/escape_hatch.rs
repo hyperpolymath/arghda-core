@@ -145,6 +145,17 @@ mod tests {
     }
 
     #[test]
+    fn brace_dash_in_line_comment_hides_no_pragma() {
+        // CodeRabbit review on #66: an opener in a line comment must not
+        // swallow a following termination pragma.
+        let r = lint_str(
+            "module M where\n-- example opener: {-\n{-# TERMINATING #-}\nf : Set\nf = f\n",
+        );
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+        assert!(r.diagnostics[0].message.contains("TERMINATING"));
+    }
+
+    #[test]
     fn brace_dash_in_line_comment_or_string_hides_no_code() {
         // Codex review on #66 (P1): fail-closed against `{-` that does not
         // open a comment.
