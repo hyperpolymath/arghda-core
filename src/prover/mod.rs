@@ -91,7 +91,9 @@ pub struct Outcome {
     pub available: bool,
     /// Process exit code, if the process ran.
     pub exit_code: Option<i32>,
-    /// `true` iff the tool exited 0 (assistant) / returned `unsat` (solver).
+    /// `true` iff [`Outcome::verdict`] is [`Verdict::Proven`]. Every backend
+    /// sets it that way: an assistant that exits 0 on a file with an admitted
+    /// goal or an axiom still has `ok == false`; a solver is `ok` on `unsat`.
     pub ok: bool,
     /// Last few lines of combined stdout+stderr (for surfacing errors).
     pub output_tail: String,

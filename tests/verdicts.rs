@@ -137,9 +137,7 @@ fn lint_rules_fired(backend: &dyn Backend, case: &str) -> Vec<String> {
 #[test]
 #[ignore = "needs the real provers; run with `just verdicts`"]
 fn agda_postulate_is_green_to_the_tool_but_hard_blocked_by_lint() {
-    if !check_case(&Agda, "postulated-post", Verdict::Proven) {
-        return;
-    }
+    // The lint half is source-only, so it runs even when `agda` is absent.
     let rules = lint_rules_fired(&Agda, "postulated-post");
     for want in ["unjustified-postulate", "missing-safe-pragma"] {
         assert!(
@@ -147,6 +145,7 @@ fn agda_postulate_is_green_to_the_tool_but_hard_blocked_by_lint() {
             "lint rules fired: {rules:?}"
         );
     }
+    check_case(&Agda, "postulated-post", Verdict::Proven);
 }
 
 #[test]
@@ -177,14 +176,15 @@ fn idris2_verdicts() {
 #[test]
 #[ignore = "needs the real provers; run with `just verdicts`"]
 fn idris2_hole_is_green_to_the_tool_but_admitted_by_check() {
-    if !check_case(&Idris2, "admitted-hole", Verdict::Proven) {
-        return;
-    }
+    // The lint half is source-only, so it runs even when `idris2` is absent.
     let rules = lint_rules_fired(&Idris2, "admitted-hole");
     assert!(
         rules.iter().any(|r| r == "escape-hatch"),
         "lint rules fired: {rules:?}"
     );
+    if !check_case(&Idris2, "admitted-hole", Verdict::Proven) {
+        return;
+    }
     let tmp = tempfile::tempdir().unwrap();
     let file = stage(&case_dir("idris2", "admitted-hole"), tmp.path());
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_arghda"))
