@@ -99,40 +99,96 @@ pub fn run_lints(
 /// Blank out Haskell-style block comments `{- … -}` (Agda, Idris2), which
 /// nest, so that text inside them is not mistaken for code by the
 /// line-based lint rules. Every character inside a comment becomes a space
-/// except newlines, so line numbers and columns are unchanged. Agda pragmas
-/// `{-# … #-}` are *not* comments and are kept verbatim: escape hatches such
-/// as `{-# TERMINATING #-}` live in them. A comment left unclosed at end of
-/// file blanks the rest of the file, as the compiler would treat it.
+/// except newlines, so line numbers are unchanged.
+///
+/// Fail-closed by construction: text is blanked only when it is certainly
+/// inside a closed block comment. Anything uncertain is kept verbatim, so a
+/// lint can over-report but never miss code:
+///
+/// * a `{-` inside a `--` line comment or a `"…"` string literal does not
+///   open a comment (both are copied through unchanged);
+/// * Agda pragmas `{-# … #-}` are kept verbatim, since escape hatches such as
+///   `{-# TERMINATING #-}` live in them;
+/// * a `{-` with no matching `-}` is left as is, together with the rest of
+///   the file (the compiler rejects such a file anyway).
 pub fn blank_block_comments(src: &str) -> String {
     let b = src.as_bytes();
     let mut out = String::with_capacity(src.len());
-    let mut depth = 0usize;
     let mut i = 0;
     while i < b.len() {
-        if depth == 0 && b[i..].starts_with(b"{-#") {
+        let rest = &b[i..];
+        if rest.starts_with(b"{-#") {
             // A pragma: copy through to its closing `#-}`.
             let end = src[i..].find("#-}").map_or(src.len(), |e| i + e + 3);
             out.push_str(&src[i..end]);
             i = end;
-        } else if b[i..].starts_with(b"{-") {
-            depth += 1;
-            out.push_str("  ");
-            i += 2;
-        } else if depth > 0 && b[i..].starts_with(b"-}") {
-            depth -= 1;
-            out.push_str("  ");
-            i += 2;
+        } else if rest.starts_with(b"--") {
+            // A line comment: copy verbatim to the end of the line.
+            let end = src[i..].find('\n').map_or(src.len(), |e| i + e);
+            out.push_str(&src[i..end]);
+            i = end;
+        } else if rest.starts_with(b"\"") {
+            // A string literal: copy verbatim to its unescaped closing quote,
+            // or to the end of the line if it is not closed there.
+            let mut j = i + 1;
+            while j < b.len() && b[j] != b'\n' {
+                if b[j] == b'\\' {
+                    j += 2;
+                    continue;
+                }
+                if b[j] == b'"' {
+                    j += 1;
+                    break;
+                }
+                j += 1;
+            }
+            let end = j.min(b.len());
+            out.push_str(&src[i..end]);
+            i = end;
+        } else if rest.starts_with(b"{-") {
+            match block_comment_end(b, i) {
+                Some(end) => {
+                    for ch in src[i..end].chars() {
+                        out.push(if ch == '\n' { '\n' } else { ' ' });
+                    }
+                    i = end;
+                }
+                None => {
+                    // Unclosed: keep the rest verbatim (fail-closed).
+                    out.push_str(&src[i..]);
+                    i = b.len();
+                }
+            }
         } else {
             let ch = src[i..].chars().next().expect("in bounds");
-            if depth > 0 && ch != '\n' {
-                out.push(' ');
-            } else {
-                out.push(ch);
-            }
+            out.push(ch);
             i += ch.len_utf8();
         }
     }
     out
+}
+
+/// Byte index just past the `-}` that closes the block comment opened at
+/// `start` (which must point at `{-`), honouring nesting; `None` if the
+/// comment is never closed.
+fn block_comment_end(b: &[u8], start: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = start;
+    while i + 1 < b.len() {
+        if b[i] == b'{' && b[i + 1] == b'-' {
+            depth += 1;
+            i += 2;
+        } else if b[i] == b'-' && b[i + 1] == b'}' {
+            depth -= 1;
+            i += 2;
+            if depth == 0 {
+                return Some(i);
+            }
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -166,10 +222,33 @@ mod block_comment_tests {
     }
 
     #[test]
-    fn unclosed_comment_blanks_the_rest() {
-        let out = blank_block_comments("ok\n{- believe_me");
-        assert!(out.starts_with("ok\n"));
+    fn unclosed_comment_is_kept_verbatim() {
+        // Fail-closed: nothing is hidden when the comment never closes.
+        let src = "ok\n{- believe_me";
+        assert_eq!(blank_block_comments(src), src);
+    }
+
+    #[test]
+    fn open_brace_dash_in_a_line_comment_does_not_open_a_comment() {
+        // Codex review on #66 (P1): this used to hide the code below.
+        let src = "-- mention {- here\nx = believe_me 0\n";
+        assert_eq!(blank_block_comments(src), src);
+    }
+
+    #[test]
+    fn open_brace_dash_in_a_string_does_not_open_a_comment() {
+        let src = "note = \"{-\"\nx = believe_me 0\n";
+        assert_eq!(blank_block_comments(src), src);
+        let esc = "s = \"a\\\"{-\"\nx = believe_me 0\n";
+        assert_eq!(blank_block_comments(esc), esc);
+    }
+
+    #[test]
+    fn comment_after_a_string_on_the_same_line_is_still_blanked() {
+        let out = blank_block_comments("s = \"x\" {- believe_me -} y");
         assert!(!out.contains("believe_me"));
+        assert!(out.starts_with("s = \"x\" "));
+        assert!(out.ends_with(" y"));
     }
 
     #[test]

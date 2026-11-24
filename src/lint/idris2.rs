@@ -219,6 +219,14 @@ mod tests {
     }
 
     #[test]
+    fn brace_dash_in_line_comment_or_string_hides_no_hole() {
+        let r = lint_str("module M\n\n-- mention {- here\nx : Nat\nx = ?todo\n");
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+        let r = lint_str("module M\n\nnote : String\nnote = \"{-\"\nx : Nat\nx = ?todo\n");
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+    }
+
+    #[test]
     fn hole_after_a_block_comment_is_still_warned() {
         let r = lint_str("module M\n\nx : Nat\nx = {- todo -} ?todo\n");
         assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);

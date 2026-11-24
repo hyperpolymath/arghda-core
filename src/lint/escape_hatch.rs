@@ -145,6 +145,16 @@ mod tests {
     }
 
     #[test]
+    fn brace_dash_in_line_comment_or_string_hides_no_code() {
+        // Codex review on #66 (P1): fail-closed against `{-` that does not
+        // open a comment.
+        let r = lint_str("module M where\n-- mention {- here\nx = believe_me 0\n");
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+        let r = lint_str("module M where\nnote = \"{-\"\nx = believe_me 0\n");
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+    }
+
+    #[test]
     fn pragma_and_code_after_a_block_comment_are_still_warned() {
         let r =
             lint_str("module M where\n{- note -} {-# TERMINATING #-}\nx = {- c -} believe_me 0\n");
