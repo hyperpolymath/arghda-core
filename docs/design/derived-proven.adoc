@@ -125,12 +125,17 @@ If a file in the input set is edited after `check` reads it but before
 new bytes. The receipt must make that impossible. Candidate rules, not yet
 chosen:
 
-* *Snapshot (preferred):* stage the input set into a fresh directory,
-  run `check` on the copy, and digest the same copy. Result and digest then
-  refer to the same bytes by construction. `tests/verdicts.rs` already
-  stages fixtures this way.
+* *Snapshot (preferred):* stage the input set into a fresh private
+  directory, make the staged copy immutable (read-only, written by nothing
+  else) before `check` starts, run `check` on that copy, and digest that same
+  copy. The guarantee holds only while the copy cannot change between the
+  check and the digest; given that, result and digest refer to the same
+  bytes by construction. `tests/verdicts.rs` already stages fixtures into a
+  temp directory, but does not make them read-only.
 * *Digest twice:* digest the input set before and after `check`, and refuse
-  to write a receipt if the two differ.
+  to write a receipt if the two differ. *Not sufficient on its own:* an
+  input changed during `check` and restored before the second digest passes
+  both. At most an extra guard alongside the snapshot.
 * *Lock:* hold a lock on the input set across `check` and digest recording.
   This depends on every editor honouring the lock, so it is the weakest.
 
