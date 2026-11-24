@@ -25,6 +25,8 @@ paths = [
   "LICENSES/",       # canonical SPDX licence texts (REUSE dir: MPL-2.0 + CC-BY-SA-4.0)
   "target/",         # cargo build output (gitignored)
   "tests/fixtures/", # Agda test-input data (some deliberately malformed)
+  ".github/labels.json",           # label data; I-JSON/JCS (D306) has no comment
+  ".github/label-classifier.json", # syntax, so no SPDX header can be carried in-file
 ]
 
 [third-party]

@@ -29,6 +29,7 @@ excluded() {
     Cargo.lock | LICENSE) return 0 ;;          # generated lockfile / the licence text itself
     LICENSES/*) return 0 ;;                     # canonical SPDX licence texts (REUSE dir)
     target/* | tests/fixtures/*) return 0 ;;   # build output / Agda test-input data
+    .github/labels.json | .github/label-classifier.json) return 0 ;;  # I-JSON/JCS data: no comment syntax
     *) return 1 ;;
   esac
 }
