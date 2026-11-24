@@ -112,34 +112,41 @@ fn agda_verdicts() {
     );
 }
 
+/// The lint rules that fire on a staged copy of `backend/case`, with the
+/// file as its own root so `orphan-module` self-skips.
+fn lint_rules_fired(backend: &dyn Backend, case: &str) -> Vec<String> {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = stage(&case_dir(backend.name(), case), tmp.path());
+    let roots = [file.clone()];
+    let ctx = LintContext {
+        include_root: tmp.path(),
+        entry_modules: &roots,
+    };
+    let pack = backend.lint_rules(&RuleConfig::default()).unwrap();
+    let report = run_lints(&file, &ctx, &pack).unwrap();
+    report.diagnostics.iter().map(|d| d.rule.clone()).collect()
+}
+
 /// Agda's backend verdict is exit-code only by design (see `src/prover/agda.rs`):
 /// a non-`--safe` file with a postulate typechecks, so the backend says
-/// `Proven`. The postulate must instead be caught by the lint pack as a
-/// hard block, which is what keeps it out of `proven`. This pins both halves.
+/// `Proven`. The postulate is caught by the lint pack as two hard blocks, so
+/// `arghda check` reports `rejected`. NOTE: as of this commit `arghda promote`
+/// does not consult the lint pack, so the hard block is reported but not
+/// enforced on the `working -> proven` move (spec §lint says it forbids it).
+/// This test pins what the backend and lint pack do, not promotion.
 #[test]
 #[ignore = "needs the real provers; run with `just verdicts`"]
 fn agda_postulate_is_green_to_the_tool_but_hard_blocked_by_lint() {
     if !check_case(&Agda, "postulated-post", Verdict::Proven) {
         return;
     }
-    let tmp = tempfile::tempdir().unwrap();
-    let file = stage(&case_dir("agda", "postulated-post"), tmp.path());
-    let roots = [file.clone()]; // its own root, so orphan-module self-skips
-    let ctx = LintContext {
-        include_root: tmp.path(),
-        entry_modules: &roots,
-    };
-    let pack = Agda.lint_rules(&RuleConfig::default()).unwrap();
-    let report = run_lints(&file, &ctx, &pack).unwrap();
-    let rules: Vec<&str> = report.diagnostics.iter().map(|d| d.rule.as_str()).collect();
-    assert!(
-        rules.contains(&"unjustified-postulate"),
-        "lint rules fired: {rules:?}"
-    );
-    assert!(
-        rules.contains(&"missing-safe-pragma"),
-        "lint rules fired: {rules:?}"
-    );
+    let rules = lint_rules_fired(&Agda, "postulated-post");
+    for want in ["unjustified-postulate", "missing-safe-pragma"] {
+        assert!(
+            rules.iter().any(|r| r == want),
+            "lint rules fired: {rules:?}"
+        );
+    }
 }
 
 #[test]
@@ -155,9 +162,28 @@ fn idris2_verdicts() {
         &Idris2,
         &[
             ("proven-good", Verdict::Proven),
-            ("admitted-hole", Verdict::Admitted),
             ("error-broken", Verdict::Error),
         ],
+    );
+}
+
+/// Like Agda, the Idris2 backend is exit-code only (`src/prover/idris2.rs`):
+/// `idris2 --check` accepts a file with an unsolved hole, so the backend says
+/// `Proven`, and the hole is surfaced only by the `escape-hatch` lint. That
+/// lint is a WARN, so `arghda check` reports such a file as
+/// `proven-eligible`; only the reason graph caps it at `Admitted`
+/// (`reason::lint_cap`). This test pins the current facts; it does not
+/// claim the `check` verdict is right for a holed file.
+#[test]
+#[ignore = "needs the real provers; run with `just verdicts`"]
+fn idris2_hole_is_green_to_the_tool_and_only_warned_by_lint() {
+    if !check_case(&Idris2, "admitted-hole", Verdict::Proven) {
+        return;
+    }
+    let rules = lint_rules_fired(&Idris2, "admitted-hole");
+    assert!(
+        rules.iter().any(|r| r == "escape-hatch"),
+        "lint rules fired: {rules:?}"
     );
 }
 
