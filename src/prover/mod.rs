@@ -91,9 +91,14 @@ pub struct Outcome {
     pub available: bool,
     /// Process exit code, if the process ran.
     pub exit_code: Option<i32>,
-    /// `true` iff [`Outcome::verdict`] is [`Verdict::Proven`]. Every backend
-    /// sets it that way: an assistant that exits 0 on a file with an admitted
-    /// goal or an axiom still has `ok == false`; a solver is `ok` on `unsat`.
+    /// `true` iff this raw backend [`Outcome::verdict`] is
+    /// [`Verdict::Proven`]; a solver is `ok` on `unsat`. It describes the
+    /// backend result only, before lint caps. Lean, Coq and Isabelle classify
+    /// admitted goals and axioms from the tool's output, so those are never
+    /// `ok`. The Agda and Idris2 backends read only the exit status: a file the
+    /// tool accepts despite an Idris2 `?hole` (or, for a non-`--safe` Agda
+    /// file, a postulate) is `Proven` and `ok` here. `arghda check` catches
+    /// those through the lint caps (`reason::cap_by_lints`).
     pub ok: bool,
     /// Last few lines of combined stdout+stderr (for surfacing errors).
     pub output_tail: String,

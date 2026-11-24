@@ -94,20 +94,45 @@ Conclusions:
 when it has a receipt whose state is `current` and which satisfies all of
 the following:
 
-* its `:inputs-sha256` equals the digest of the file's current import cone;
+* its `:inputs-sha256` equals the digest of the file's current *input set*.
+  This is the §8.5.1 input set for the backend: the import cone plus every
+  configuration file the run reads (for example `.agda-lib` and `libraries`;
+  `_CoqProject`, `dune`, `dune-project`; `lakefile.lean` or `lakefile.toml`,
+  `lean-toolchain`, `lake-manifest.json`). An import cone alone is not enough;
+  a changed toolchain pin must make the receipt stale;
+* the check that produced its result read exactly the bytes that digest
+  covers (see "Binding the result to its inputs" below);
 * its result is `proven` after lint caps (`reason::cap_by_lints`);
-* it records no lint hard-block;
+* it records no lint hard-block (but see gap 3: the schema cannot yet hold
+  this);
 * its `:checker` names the backend and tool version.
 
-A receipt becomes `stale` when its cone digest no longer matches, which is
-the PROOF-POLICY §8.4 lineage state. `superseded` and `regressed` follow
-§8.4 too. `reason::workspace_verdicts` reads receipts instead of directory
-membership.
+A receipt becomes `stale` when the digest of its input set no longer
+matches, which is the PROOF-POLICY §8.4 lineage state. `superseded` and
+`regressed` follow §8.4 too. `reason::workspace_verdicts` reads receipts
+instead of directory membership.
 
 The input digest follows §8.5.1 exactly: a manifest with one line per file,
-`<sha256>  <path>`, sorted bytewise, then hashed with SHA-256, using the
-reference `scripts/proof-inputs-sha256.sh`. It replaces arghda's own
-`closure_hash`, so anyone can recompute a receipt with git alone.
+`<sha256>  <path>`, with the lines sorted by *path* in bytewise (C locale)
+order, then hashed with SHA-256, using the reference
+`scripts/proof-inputs-sha256.sh`. It replaces arghda's own `closure_hash`,
+so anyone can recompute a receipt with git alone.
+
+=== Binding the result to its inputs
+
+If a file in the input set is edited after `check` reads it but before
+`promote` records the digest, the receipt pairs an old `proven` result with
+new bytes. The receipt must make that impossible. Candidate rules, not yet
+chosen:
+
+* *Snapshot (preferred):* stage the input set into a fresh directory,
+  run `check` on the copy, and digest the same copy. Result and digest then
+  refer to the same bytes by construction. `tests/verdicts.rs` already
+  stages fixtures this way.
+* *Digest twice:* digest the input set before and after `check`, and refuse
+  to write a receipt if the two differ.
+* *Lock:* hold a lock on the input set across `check` and digest recording.
+  This depends on every editor honouring the lock, so it is the weakest.
 
 === Fit with the proof-receipt deed, and the gaps
 
@@ -117,18 +142,28 @@ Checked against standards `1-formats/deed/tools/deed_lint.js`:
   `:state`, `(inputs-manifest …)`, `(axioms …)`); lineage states; and
   `:pwg ungraded`, which the linter accepts. arghda checks files, not theory
   theorems, so it records no PWG grade (policy §8.1).
-* *Gap 1, uncommitted files.* `:source-commit` and each receipt's
-  `:commit` must be a full 40-character commit. Files in `inbox/` and
-  `working/` are usually uncommitted.
+* *Gap 1, uncommitted local runs.* `:source-commit` and each receipt's
+  `:commit` must be a full 40-character commit, and each receipt's `:run`
+  is required. Files in `inbox/` and `working/` are usually uncommitted,
+  and a local `promote` has no CI run to cite.
 * *Gap 2, granularity.* A receipt sits in a per-theorem `claim`, while
   arghda's unit is a file. The proposal is one `claim` per module, with the
   module name as `:id`.
+* *Gap 3, lint evidence.* The receipt's field set is closed: `:run`,
+  `:commit`, `:checker`, `:invocation`, `:inputs-sha256`, `:state`,
+  `:reason`, `:image`, and the `(axioms …)`, `(inputs-manifest …)` and
+  `(import …)` clauses. The linter rejects any other field. A receipt
+  therefore cannot record that the lint pack ran and found no hard block,
+  and a clean result cannot be told apart from missing lint evidence. Where
+  that evidence lives, and how it is validated, must be decided before the
+  receipt rule above can be implemented.
 
 === The invariant, and how to prove it
 
 ----
 ∀ f. derived_proven(f) ⇒ ∃ r ∈ receipts.
-       r.state = current ∧ r.inputs_sha256 = digest(cone(f))
+       r.state = current ∧ r.inputs_sha256 = digest(inputs(f))
+       ∧ r.inputs_sha256 = digest(bytes_checked(r))
        ∧ capped(r) = Proven ∧ ¬ r.hard_block
 ----
 
@@ -154,6 +189,11 @@ order-independent. That is a small lemma to prove next to it, and
 . *Where the receipt lives.* Is a workspace receipt a
   `verification/receipts/*_praxis.deed` in the workspace's own repository, or
   under `.arghda/`?
+. *Gap 3.* Where is the lint outcome recorded: a new receipt field proposed
+  upstream in standards, or a separate arghda record keyed by the same input
+  digest?
+. *Binding.* Which rule binds a result to its inputs: snapshot, digest twice,
+  or lock? The snapshot is preferred above.
 
 == Plan once these are settled
 
