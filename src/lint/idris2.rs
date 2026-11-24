@@ -41,6 +41,8 @@ impl LintRule for Idris2EscapeHatch {
     fn run(&self, file: &Path, _ctx: &LintContext<'_>, report: &mut LintReport) -> Result<()> {
         let contents =
             fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        // Text inside `{- … -}` block comments is not code.
+        let contents = super::blank_block_comments(&contents);
         for (i, line) in contents.lines().enumerate() {
             let trimmed = line.trim_start();
             if trimmed.starts_with("--") {
@@ -206,6 +208,20 @@ mod tests {
     fn escape_token_in_comment_is_ignored() {
         let r = lint_str("module M\n\nx : Nat\nx = 0 -- avoid believe_me here\n");
         assert!(r.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn escape_token_in_block_comment_is_ignored() {
+        let r = lint_str(
+            "module M\n\n{- no ?holes, no partial,\n   no believe_me -}\nx : Nat\nx = 0\n",
+        );
+        assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+    }
+
+    #[test]
+    fn hole_after_a_block_comment_is_still_warned() {
+        let r = lint_str("module M\n\nx : Nat\nx = {- todo -} ?todo\n");
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
     }
 
     #[test]

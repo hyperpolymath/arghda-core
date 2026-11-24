@@ -30,6 +30,8 @@ impl LintRule for EscapeHatch {
     fn run(&self, file: &Path, _ctx: &LintContext<'_>, report: &mut LintReport) -> Result<()> {
         let contents =
             fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        // Text inside `{- … -}` is not code (pragmas `{-# … #-}` are kept).
+        let contents = super::blank_block_comments(&contents);
         for (i, line) in contents.lines().enumerate() {
             let trimmed = line.trim_start();
             if trimmed.starts_with("--") {
@@ -131,5 +133,22 @@ mod tests {
     fn clean_file_is_silent() {
         let r = lint_str("module M where\nf : Set\nf = Set\n");
         assert!(r.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn believe_me_in_block_comment_is_ignored() {
+        // Codex review on #66: a `{- … -}` mention must not cap a proof.
+        let r = lint_str("module M where\n{- avoid believe_me here -}\nf : Set\nf = Set\n");
+        assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+        let r = lint_str("module M where\n{- multi\n   believe_me\n -}\nf : Set\nf = Set\n");
+        assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+    }
+
+    #[test]
+    fn pragma_and_code_after_a_block_comment_are_still_warned() {
+        let r =
+            lint_str("module M where\n{- note -} {-# TERMINATING #-}\nx = {- c -} believe_me 0\n");
+        assert_eq!(r.warns().count(), 2, "{:?}", r.diagnostics);
+        assert_eq!(r.diagnostics[1].line, Some(3));
     }
 }

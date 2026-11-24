@@ -96,10 +96,13 @@ pub struct Outcome {
     /// backend result only, before lint caps, and the backends classify
     /// differently:
     ///
-    /// * Lean reads the tool's own output: `sorry` makes it `Admitted`, and a
-    ///   `#print axioms` audit makes it `Postulated` for any axiom outside the
-    ///   standard three (`propext`, `Classical.choice`, `Quot.sound`). A file
-    ///   that relies only on those three is `Proven` and `ok`.
+    /// * Lean reads the tool's own output. A clean elaboration is only
+    ///   `Unknown` until a `#print axioms` audit runs; if the audit cannot run
+    ///   it stays `Unknown`, never `Proven`. `sorry` in the output, or
+    ///   `sorryAx` in the audit, makes it `Admitted`; any other axiom outside
+    ///   the standard three (`propext`, `Classical.choice`, `Quot.sound`)
+    ///   makes it `Postulated`. A file whose audit shows only those three is
+    ///   `Proven` and `ok`.
     /// * Coq and Isabelle scan the *source* after a successful run (for
     ///   `Admitted`, `sorry`, axioms and the like).
     /// * Agda and Idris2 read only the exit status. A file the tool accepts

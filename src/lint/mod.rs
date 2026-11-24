@@ -95,3 +95,85 @@ pub fn run_lints(
     }
     Ok(report)
 }
+
+/// Blank out Haskell-style block comments `{- … -}` (Agda, Idris2), which
+/// nest, so that text inside them is not mistaken for code by the
+/// line-based lint rules. Every character inside a comment becomes a space
+/// except newlines, so line numbers and columns are unchanged. Agda pragmas
+/// `{-# … #-}` are *not* comments and are kept verbatim: escape hatches such
+/// as `{-# TERMINATING #-}` live in them. A comment left unclosed at end of
+/// file blanks the rest of the file, as the compiler would treat it.
+pub fn blank_block_comments(src: &str) -> String {
+    let b = src.as_bytes();
+    let mut out = String::with_capacity(src.len());
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < b.len() {
+        if depth == 0 && b[i..].starts_with(b"{-#") {
+            // A pragma: copy through to its closing `#-}`.
+            let end = src[i..].find("#-}").map_or(src.len(), |e| i + e + 3);
+            out.push_str(&src[i..end]);
+            i = end;
+        } else if b[i..].starts_with(b"{-") {
+            depth += 1;
+            out.push_str("  ");
+            i += 2;
+        } else if depth > 0 && b[i..].starts_with(b"-}") {
+            depth -= 1;
+            out.push_str("  ");
+            i += 2;
+        } else {
+            let ch = src[i..].chars().next().expect("in bounds");
+            if depth > 0 && ch != '\n' {
+                out.push(' ');
+            } else {
+                out.push(ch);
+            }
+            i += ch.len_utf8();
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod block_comment_tests {
+    use super::blank_block_comments;
+
+    #[test]
+    fn single_line_comment_is_blanked() {
+        assert_eq!(blank_block_comments("a {- b -} c"), "a         c");
+    }
+
+    #[test]
+    fn multi_line_comment_keeps_newlines() {
+        let out = blank_block_comments("x\n{- believe_me\n   here -}\ny");
+        assert_eq!(out.lines().count(), 4);
+        assert!(!out.contains("believe_me"));
+        assert!(out.ends_with("\ny"));
+    }
+
+    #[test]
+    fn nested_comment_is_blanked_to_its_outer_close() {
+        let out = blank_block_comments("{- a {- b -} believe_me -} z");
+        assert!(!out.contains("believe_me"));
+        assert!(out.ends_with(" z"));
+    }
+
+    #[test]
+    fn pragma_is_kept_verbatim() {
+        let src = "{-# TERMINATING #-}\nf = f";
+        assert_eq!(blank_block_comments(src), src);
+    }
+
+    #[test]
+    fn unclosed_comment_blanks_the_rest() {
+        let out = blank_block_comments("ok\n{- believe_me");
+        assert!(out.starts_with("ok\n"));
+        assert!(!out.contains("believe_me"));
+    }
+
+    #[test]
+    fn multibyte_text_is_preserved_outside_comments() {
+        assert_eq!(blank_block_comments("λ {- ∀ -} →"), "λ         →");
+    }
+}
