@@ -5,7 +5,8 @@
 # Licence invariant for arghda-core (enforced by `just check` + Rust CI).
 #
 #   code / config / scripts / state   ->  SPDX-License-Identifier: MPL-2.0
-#   prose documentation (*.adoc, *.md) ->  SPDX-License-Identifier: CC-BY-SA-4.0
+#   prose documentation (*.adoc, *.md, MAINTAINERS)
+#                                       ->  SPDX-License-Identifier: CC-BY-SA-4.0
 #
 # Files that are NOT ours, generated, or test-input data are EXCLUDED and must
 # never carry the repo's licence choices. The machine-readable declaration of
@@ -37,7 +38,7 @@ excluded() {
 while IFS= read -r f; do
   excluded "$f" && continue
   case "$f" in
-    *.adoc | *.md) want="$CC"; label="CC-BY-SA-4.0 (prose)" ;;
+    *.adoc | *.md | MAINTAINERS) want="$CC"; label="CC-BY-SA-4.0 (prose)" ;;  # MAINTAINERS: prose without an extension (owner, 2026-11-25)
     *) want="$MPL"; label="MPL-2.0 (code/config/script/state)" ;;
   esac
   if ! grep -qF "$want" "$f"; then

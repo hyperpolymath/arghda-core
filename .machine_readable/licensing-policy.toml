@@ -13,7 +13,7 @@ wired-into = ["Justfile (just check / just license-check)", ".github/workflows/r
 [licences]
 # By content type, not by directory.
 code = "MPL-2.0"        # *.rs, *.toml, *.a2ml, *.yml, *.sh, Justfile, .gitignore, .well-known/*
-prose = "CC-BY-SA-4.0"  # *.adoc, *.md narrative
+prose = "CC-BY-SA-4.0"  # *.adoc, *.md narrative, and MAINTAINERS (prose without an extension)
 # Canonical texts: MPL-2.0 -> ./LICENSE ; CC-BY-SA-4.0 -> standards/LICENSES/CC-BY-SA-4.0.txt
 
 [excluded]
