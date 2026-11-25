@@ -203,6 +203,102 @@ checked on its own with CI's flags (`--safe --without-K
   but no root or receipt records it (departure row in
   metadatastician/standards#1706).
 
+=== echidna, measured 2026-11-25
+
+`hyperpolymath/echidna` at `14ada6d`, read-only copy, release build of
+arghda. `arghda check --json` ran on all 122 prover files in seven
+backends. Each file ran on its own, with `--include-root` derived from its
+module header. This is the multi-backend corpus that echo-types is not.
+
+.First pass, `arghda check` verdict by backend
+|===
+|Backend |Files |proven-eligible |unknown |refuted |rejected |unavailable
+
+|Agda |26 |0 |0 |0 |26 |0
+|Coq |9 |7 |0 |0 |2 |0
+|Idris2 |38 |36 |0 |0 |2 |0
+|Isabelle |6 |0 |0 |0 |0 |6
+|Lean 4 |16 |1 |12 |0 |3 |0
+|Mizar |5 |1 |0 |0 |4 |0
+|Z3 |22 |15 |0 |7 |0 |0
+|*Total* |*122* |*60* |*12* |*7* |*37* |*6*
+|===
+
+81 of 122 files exit 0, but only 60 are proven-eligible. The 21 that exit 0
+and are not proven-eligible are the point of the verdict layer:
+
+* *7 Z3 files are `sat`*, which means refuted (for example
+  `tests/live_goals/contradiction.smt2` and `proofs/z3/basic.smt2`). A reader
+  that took exit code 0 as "proven" would promote all seven.
+* *12 Lean files read `unknown`.* That is an arghda defect, and it fails
+  closed. The axiom audit looks declarations up by their unqualified names,
+  so it never finds a declaration inside a `namespace`. Checked by hand with
+  qualified names:
+  - `EchidnaPareto.TrustLevel.value_pos` depends on `[propext]`.
+  - `EchidnaPareto.dominates_transitive` depends on `[propext, Quot.sound]`.
+  Both would be Proven. The defect costs completeness, not soundness.
+* *2 Agda files* (`proofs/agda/Basic.agda`, `tests/live_goals/Identity.agda`)
+  exit 0 but are hard-blocked by `missing-safe-pragma`. echidna's CI passes
+  `--safe` on the command line, not in the file. This mirrors echo-types'
+  orphan finding: the lint has to know the CI's invocation, flags as well as
+  entry points, or it blocks files that CI checks under `--safe`.
+
+The 24 other Agda rejections were not proof failures. The first pass ran
+without a UTF-8 locale (Agda exits on the Unicode in the sources) and against
+one stdlib, while echidna pins two Agda tracks. arghda classed the locale
+failure as a rejection, which is a second arghda defect: an environment
+failure reads as a proof failure. Agda was re-run directly on echidna's own
+pins, with `LC_ALL=C.UTF-8`:
+
+.Agda, on echidna's pinned tracks
+|===
+|Track |Toolchain and flags |Files |Accepted
+
+|`meta-checker/` |Agda 2.7.0.1, stdlib v2.1, `--no-default-libraries --library-file … --safe --without-K --cubical-compatible` |10 |10
+|`proofs/agda/` and `tests/` |Agda 2.6.3, stdlib v1.7.3, `--safe --without-K --cubical-compatible` |16 |14
+|===
+
+Both rejections are by design:
+* `tests/live_goals/Broken.agda` is a deliberate type error.
+* `tests/chapel_fixtures/agda_trivial.agda` declares `module Trivial`
+  because echidna's Chapel runner writes it to `Trivial.agda` before checking
+  (`filenameOverride`).
+
+Every Agda module that `docs/PROOF-STATUS.adoc` cites and that exists in this
+tree is accepted on its track. That is 7 modules (5 in the meta-checker,
+`ProofComposition` and `SoundnessPreservation`).
+
+These are prover results, not arghda verdicts. A pinned-toolchain arghda run
+of those 24 files has not been made yet. The stdlib sources were fetched by
+git tag because the release tarballs returned 403 through this session's
+proxy, so the tarball SHA-256 was not checked.
+
+The 11 non-Agda rejections:
+
+|===
+|Cause |Files
+
+|By design: a negative fixture (`tests/live_goals/broken.v`), a renamed fixture (`idris2_trivial.idr`), or a documented non-proof fixture (`tests/fixtures/non-proof/NeSyAssistTesting.idr`, which "does not parse") |3
+|Lean import path: `proofs/lean/ECHIDNA.lean` (`Basic`) and `verification/proofs/lean4/ParetoStrongMaximality.lean` (`ParetoMaximality`) need the sibling modules on the search path, which the per-file run did not supply |2
+|Needs Mathlib (`tests/corpus_fixtures/minif2f/algebra.lean`), which estate policy excludes |1
+|Real failure under Coq 8.18.0: `examples/simple_proof.v`, "Found no subterm matching `m + n' * m`". echidna's dogfood CI prints `coqc --version` but pins no version |1
+|Mizar checker errors (`.err` codes 203, 11, 55, 253), cause not diagnosed |4
+|===
+
+*No file that arghda called proven-eligible is rejected by its prover.* The
+risk on this corpus was the exit-code reading, and the verdict layer caught
+it: 7 refuted files exit 0.
+
+Defects found, to fix in arghda:
+
+* Lean axiom audit: track the `namespace` / `end` stack in `decl_names`.
+* An environment failure, such as a locale error or a missing library, is
+  classed as rejected. It should be its own verdict, as `unavailable` already
+  is.
+* The lint takes no account of the CI's invocation (command-line `--safe`,
+  entry points). A receipt writer must record that invocation anyway
+  (`:invocation`), so the lint should read it from there.
+
 == Design
 
 === Receipts
