@@ -29,6 +29,9 @@
 
 pub mod sexp;
 
+/// The one deed `:schema-version` this reader understands.
+pub const SCHEMA_VERSION: &str = "1.0.0";
+
 use crate::hash::sha256_hex;
 use crate::prover::Verdict;
 use crate::reason::cap_by_lints;
@@ -188,9 +191,12 @@ fn closed(form: &Form<'_>, allowed: &[&str], clauses: &[&str]) -> Result<()> {
 }
 
 /// §8.5.1 path rules: no newline or backslash, no empty, `.` or `..` part.
+/// Also refused here: any other control character, such as `\r`, because
+/// `sha256sum` escapes it in its line format and the two digest routes
+/// would then disagree.
 pub fn check_manifest_path(p: &str) -> Result<()> {
-    if p.contains('\n') || p.contains('\\') {
-        bail!("manifest path {p:?} holds a newline or a backslash");
+    if p.contains('\\') || p.chars().any(char::is_control) {
+        bail!("manifest path {p:?} holds a control character or a backslash");
     }
     if p.split('/')
         .any(|part| part.is_empty() || part == "." || part == "..")
@@ -219,6 +225,13 @@ pub fn manifest_digest(files: &[(String, String)]) -> String {
 /// This reads the files on disk. For a committed file the bytes are the git
 /// blob only when no checkout filter applies; a workspace receipt is about
 /// the worktree, so that is the right source for it.
+///
+/// Symbolic links are refused, at every component of the path: git records
+/// a link as its target *path*, while reading through it would hash the
+/// target's *contents*, so the two routes could not agree, and a link could
+/// reach outside `root`. A path must also be plain relative components (no
+/// root, no drive prefix). The check runs before the read; a tree that
+/// changes between the two is outside what this function can rule out.
 pub fn worktree_manifest(root: &Path, paths: &[String]) -> Result<(Vec<(String, String)>, String)> {
     let mut sorted: Vec<&String> = paths.iter().collect();
     sorted.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
@@ -226,6 +239,21 @@ pub fn worktree_manifest(root: &Path, paths: &[String]) -> Result<(Vec<(String, 
     let mut files = Vec::with_capacity(sorted.len());
     for p in sorted {
         check_manifest_path(p)?;
+        let rel = Path::new(p.as_str());
+        if rel
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            bail!("manifest path {p:?} is not a plain relative path");
+        }
+        let mut at = root.to_path_buf();
+        for c in rel.components() {
+            at.push(c);
+            let meta = std::fs::symlink_metadata(&at).with_context(|| format!("reading {p}"))?;
+            if meta.file_type().is_symlink() {
+                bail!("manifest path {p:?} goes through a symbolic link");
+            }
+        }
         let bytes = std::fs::read(root.join(p)).with_context(|| format!("reading {p}"))?;
         files.push((p.clone(), sha256_hex(&bytes)));
     }
@@ -239,6 +267,12 @@ pub fn worktree_manifest(root: &Path, paths: &[String]) -> Result<(Vec<(String, 
 fn read_manifest(sx: &Sx) -> Result<Vec<(String, String)>> {
     let form = Form::of(sx)?;
     closed(&form, &[], &["file"])?;
+    read_files(&form)
+}
+
+/// The `(file :path … :sha256 …)` clauses of `form`, checked by the §8.5.1
+/// rules: non-empty, strictly increasing bytewise, valid paths and digests.
+fn read_files(form: &Form<'_>) -> Result<Vec<(String, String)>> {
     let mut files: Vec<(String, String)> = Vec::new();
     for f in form.clauses_named("file") {
         let ff = Form::of(f)?;
@@ -257,17 +291,114 @@ fn read_manifest(sx: &Sx) -> Result<Vec<(String, String)>> {
         files.push((path.to_string(), sha.to_string()));
     }
     if files.is_empty() {
-        bail!("(inputs-manifest …) lists no file");
+        bail!("({} …) lists no file", form.head);
     }
     Ok(files)
+}
+
+/// Check every `(import :repository … :commit … :inputs-sha256 … (file …) …)`
+/// clause of a receipt (§8.5.1, imported repositories): the files by the
+/// manifest rules, the digest rebuilt from them, and one pin per repository.
+fn check_imports(form: &Form<'_>) -> Result<()> {
+    let mut seen: Vec<String> = Vec::new();
+    for c in form.clauses_named("import") {
+        let f = Form::of(c)?;
+        closed(&f, &["repository", "commit", "inputs-sha256"], &["file"])?;
+        let repo = f
+            .str("repository")?
+            .context("(import …) needs :repository")?;
+        let (owner, name) = repo
+            .split_once('/')
+            .context("(import …): :repository must be OWNER/REPO")?;
+        let ok = |s: &str| {
+            !s.is_empty()
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'))
+        };
+        if !ok(owner) || !ok(name) {
+            bail!("(import …): :repository must be OWNER/REPO");
+        }
+        let key = repo.to_ascii_lowercase();
+        if seen.contains(&key) {
+            bail!("(import …): {repo} is listed twice (one pin per repository)");
+        }
+        seen.push(key);
+        match f.str("commit")? {
+            Some(c) if is_hex(c, 40) => {}
+            _ => bail!("(import {repo}): :commit must be the full 40-character commit"),
+        }
+        let d = f
+            .str("inputs-sha256")?
+            .filter(|d| is_hex(d, 64))
+            .with_context(|| format!("(import {repo}): :inputs-sha256 must be 64 lowercase hex"))?;
+        let files = read_files(&f)?;
+        let got = manifest_digest(&files);
+        if got != d {
+            bail!(
+                "(import {repo}): :inputs-sha256 is not the SHA-256 of its files (they give {got})"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The names a `:checker` may start with for a leg of this deed prover.
+fn checker_names(prover: &str) -> &[&str] {
+    match prover {
+        "agda" => &["agda"],
+        "rocq" | "coq" => &["rocq", "coq", "coqc"],
+        "lean" => &["lean", "lean4"],
+        "idris2" => &["idris2"],
+        "isabelle" => &["isabelle"],
+        "mizar" => &["mizar", "mizf"],
+        "z3" => &["z3"],
+        "cvc5" => &["cvc5"],
+        _ => &[],
+    }
+}
+
+/// A `:checker` must name the leg's own prover and a version
+/// (`"agda 2.6.4.3"`), so a receipt from one tool cannot stand for another.
+fn check_checker(prover: &str, checker: &str) -> Result<()> {
+    let mut words = checker.split_whitespace();
+    let tool = words.next().unwrap_or("");
+    let version = words.next().unwrap_or("");
+    let names = checker_names(prover);
+    let named = if names.is_empty() {
+        tool == prover
+    } else {
+        names.contains(&tool)
+    };
+    if !named || version.is_empty() {
+        bail!(":checker {checker:?} must name the {prover} leg's prover and a version");
+    }
+    Ok(())
+}
+
+/// The deed prover symbol for an arghda backend name: receipts use the
+/// standards vocabulary (`rocq`, `lean`; one `agda` leg for both Agda
+/// profiles), arghda's backends use their tool names (`coq`, `lean4`,
+/// `agda-cubical`).
+pub fn deed_prover_for_backend(backend: &str) -> &str {
+    match backend {
+        "agda" | "agda-cubical" => "agda",
+        "coq" => "rocq",
+        "lean4" => "lean",
+        other => other,
+    }
 }
 
 fn read_lint(sx: &Sx) -> Result<LintEvidence> {
     let form = Form::of(sx)?;
     closed(&form, &["pack"], &["finding"])?;
+    // The pack must be named: a blank pack would let a clause stand as lint
+    // evidence without saying which pack ran. A name does not prove the run
+    // (see the module docs on what a receipt can and cannot establish).
     let pack = form
         .str("pack")?
-        .context("(lint …) needs :pack")?
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .context("(lint …) needs a non-blank :pack")?
         .to_string();
     let mut findings = Vec::new();
     for f in form.clauses_named("finding") {
@@ -287,7 +418,7 @@ fn read_lint(sx: &Sx) -> Result<LintEvidence> {
     Ok(LintEvidence { pack, findings })
 }
 
-fn read_receipt(sx: &Sx, profile: Profile) -> Result<Receipt> {
+fn read_receipt(sx: &Sx, profile: Profile, prover: &str) -> Result<Receipt> {
     let form = Form::of(sx)?;
     closed(
         &form,
@@ -321,6 +452,8 @@ fn read_receipt(sx: &Sx, profile: Profile) -> Result<Receipt> {
         .str("checker")?
         .context("(receipt …) needs :checker")?
         .to_string();
+    check_checker(prover, &checker)?;
+    check_imports(&form)?;
     let invocation = form
         .str("invocation")?
         .context("(receipt …) needs :invocation")?
@@ -413,6 +546,16 @@ impl ReceiptDeed {
             ],
             &["trusted-base", "claim", "echo"],
         )?;
+        // deed.abnf: `:schema-version` STRING exactly once (Form::of refuses a
+        // repeat). Only the version this reader knows is accepted, so a future,
+        // possibly incompatible format is refused rather than misread.
+        match top.str("schema-version")? {
+            Some(SCHEMA_VERSION) => {}
+            Some(v) => {
+                bail!("unsupported :schema-version {v:?} (this reader knows {SCHEMA_VERSION:?})")
+            }
+            None => bail!("a receipt needs :schema-version"),
+        }
         let profile = match top.sym("profile")?.context("a receipt needs :profile")? {
             "proof-receipt" => Profile::ProofReceipt,
             "workspace-receipt" => Profile::WorkspaceReceipt,
@@ -469,7 +612,7 @@ impl ReceiptDeed {
                 let receipts = lf
                     .clauses_named("receipt")
                     .into_iter()
-                    .map(|r| read_receipt(r, profile))
+                    .map(|r| read_receipt(r, profile, &prover))
                     .collect::<Result<Vec<_>>>()
                     .with_context(|| format!("claim {id:?}, {prover} leg"))?;
                 if receipts
@@ -497,6 +640,24 @@ impl ReceiptDeed {
     ///
     /// The result is `Proven` only when every condition of the receipt rule
     /// holds; any missing evidence gives `Unknown`, never a guess.
+    /// [`ReceiptDeed::derive`] for an arghda backend name (`coq`, `lean4`,
+    /// `agda-cubical`, …), mapped to the deed prover symbol first.
+    pub fn derive_for_backend(
+        &self,
+        claim: &str,
+        backend: &str,
+        current_inputs_sha256: &str,
+    ) -> Derivation {
+        self.derive(
+            claim,
+            deed_prover_for_backend(backend),
+            current_inputs_sha256,
+        )
+    }
+
+    /// `prover` is the deed prover symbol of the leg (`agda`, `rocq`,
+    /// `lean`, …); see [`deed_prover_for_backend`] and
+    /// [`ReceiptDeed::derive_for_backend`] for arghda backend names.
     pub fn derive(&self, claim: &str, prover: &str, current_inputs_sha256: &str) -> Derivation {
         let Some(c) = self.claims.iter().find(|c| c.id == claim) else {
             return Derivation::unknown(Why::NoClaim);

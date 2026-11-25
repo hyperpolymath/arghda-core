@@ -36,6 +36,7 @@ pub fn parse(src: &str) -> Result<Sx> {
         src,
         i: 0,
         line: 1,
+        depth: 0,
     };
     p.skip_ws();
     let sx = p.expr()?;
@@ -46,11 +47,17 @@ pub fn parse(src: &str) -> Result<Sx> {
     Ok(sx)
 }
 
+/// The deepest list nesting the reader accepts. A receipt nests about five
+/// deep; the limit bounds both the parser's recursion and the depth of the
+/// tree it returns, so hostile input gets an error, not a stack overflow.
+pub const MAX_DEPTH: usize = 64;
+
 struct Parser<'a> {
     b: &'a [u8],
     src: &'a str,
     i: usize,
     line: usize,
+    depth: usize,
 }
 
 fn is_delim(c: u8) -> bool {
@@ -82,6 +89,10 @@ impl Parser<'_> {
         };
         match c {
             b'(' => {
+                if self.depth >= MAX_DEPTH {
+                    bail!("line {}: lists nested deeper than {MAX_DEPTH}", self.line);
+                }
+                self.depth += 1;
                 self.i += 1;
                 let mut items = Vec::new();
                 loop {
@@ -90,6 +101,7 @@ impl Parser<'_> {
                         None => bail!("line {}: unclosed `(`", self.line),
                         Some(b')') => {
                             self.i += 1;
+                            self.depth -= 1;
                             return Ok(Sx::List(items));
                         }
                         Some(_) => items.push(self.expr()?),
@@ -152,22 +164,24 @@ impl Parser<'_> {
                     self.i += 1;
                     return Ok(out);
                 }
-                b'\\' => match self.b.get(self.i + 1) {
-                    Some(b'"') => {
-                        out.push('"');
-                        self.i += 2;
-                    }
-                    Some(b'\\') => {
-                        out.push('\\');
-                        self.i += 2;
-                    }
-                    _ => bail!("line {}: unsupported escape in a string", self.line),
-                },
+                // deed.abnf: exactly four escapes, \" \\ \n \t.
+                b'\\' => {
+                    let decoded = match self.b.get(self.i + 1) {
+                        Some(b'"') => '"',
+                        Some(b'\\') => '\\',
+                        Some(b'n') => '\n',
+                        Some(b't') => '\t',
+                        _ => bail!("line {}: unsupported escape in a string", self.line),
+                    };
+                    out.push(decoded);
+                    self.i += 2;
+                }
+                // deed.abnf `str-char` admits no raw control character.
+                c if c < 0x20 || c == 0x7F => {
+                    bail!("line {}: raw control character in a string", self.line)
+                }
                 _ => {
                     let ch = self.src[self.i..].chars().next().expect("in bounds");
-                    if ch == '\n' {
-                        self.line += 1;
-                    }
                     out.push(ch);
                     self.i += ch.len_utf8();
                 }
@@ -282,6 +296,34 @@ mod tests {
     }
 
     #[test]
+    fn decodes_the_four_deed_escapes() {
+        // deed.abnf: exactly \" \\ \n \t.
+        let sx = parse("(a :b \"x\\ny\\tz\\\"q\\\\\")").unwrap();
+        assert_eq!(
+            Form::of(&sx).unwrap().str("b").unwrap(),
+            Some("x\ny\tz\"q\\")
+        );
+        for bad in ["(a :b \"\\r\")", "(a :b \"\\u0041\")", "(a :b \"\\x\")"] {
+            let e = parse(bad).unwrap_err().to_string();
+            assert!(e.contains("unsupported escape"), "{bad}: {e}");
+        }
+        let e = parse("(a :b \"raw\nnewline\")").unwrap_err().to_string();
+        assert!(e.contains("raw control character"), "{e}");
+    }
+
+    #[test]
+    fn nesting_is_bounded() {
+        let ok = format!("{}{}", "(".repeat(MAX_DEPTH), ")".repeat(MAX_DEPTH));
+        assert!(parse(&ok).is_ok());
+        let deep = "(".repeat(MAX_DEPTH + 1);
+        let e = parse(&deep).unwrap_err().to_string();
+        assert!(e.contains("nested deeper"), "{e}");
+        // An unclosed prefix far deeper than the limit returns an error
+        // instead of exhausting the stack.
+        assert!(parse(&"(".repeat(1_000_000)).is_err());
+    }
+
+    #[test]
     fn refuses_malformed_input() {
         for bad in [
             "(a",
@@ -292,7 +334,8 @@ mod tests {
             "(a :b 1 :b 2)",
             "(a stray)",
             "(a #z)",
-            "(a \"\\n\")",
+            "(a :b \"\\r\")",
+            "(a :b \"raw\nnewline\")",
             "(a) (b)",
         ] {
             let r = parse(bad).and_then(|sx| Form::of(&sx).map(|_| ()));

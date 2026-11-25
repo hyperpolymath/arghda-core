@@ -139,8 +139,10 @@ zero there, and cannot be measured as first planned. What was measured:
 |Input-set size (files) |min 2, median 5, max 113
 |===
 
-One digest (`AntiEcho`) was recomputed with the standards shell line
-(`LC_ALL=C sort | xargs sha256sum | sha256sum`) and matched. Hashing is
+One digest (`AntiEcho`) was recomputed with the standards shell line, which
+takes one path per input line (`printf '%s\n' PATH… | LC_ALL=C sort | xargs
+-d '\n' sha256sum -- | sha256sum`), and matched; the command actually run
+used the same `xargs -d '\n'`. Hashing is
 negligible; the import graph dominates. `dag` took 1.83 s here against
 135 ms for 3000 synthetic modules, so the real files' size, not the module
 count, drives it. That is not yet profiled.

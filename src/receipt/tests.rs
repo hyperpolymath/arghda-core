@@ -258,9 +258,52 @@ fn malformed_receipts_are_refused() {
             "needs :reason",
         ),
         (
-            "proof-receipt without a commit",
+            "proof-receipt without a repository",
             ok.replace(":profile workspace-receipt", ":profile proof-receipt"),
             "needs :repository",
+        ),
+        (
+            "proof-receipt without a source commit",
+            STANDARDS_EXAMPLE.replace(
+                ":source-commit \"0123456789abcdef0123456789abcdef01234567\"",
+                "",
+            ),
+            "40-character :source-commit",
+        ),
+        (
+            "no schema version",
+            ok.replace(":schema-version \"1.0.0\"", ""),
+            "needs :schema-version",
+        ),
+        (
+            "unknown schema version",
+            ok.replace(":schema-version \"1.0.0\"", ":schema-version \"2.0.0\""),
+            "unsupported :schema-version",
+        ),
+        (
+            "non-string schema version",
+            ok.replace(":schema-version \"1.0.0\"", ":schema-version #t"),
+            "must be a string",
+        ),
+        (
+            "blank lint pack",
+            ok.replace("(lint :pack \"arghda-0.1\")", "(lint :pack \"  \")"),
+            "non-blank :pack",
+        ),
+        (
+            "checker names another prover",
+            ok.replace(":checker \"agda 2.6.3\"", ":checker \"z3 4.13\""),
+            "must name the agda leg's prover",
+        ),
+        (
+            "checker without a version",
+            ok.replace(":checker \"agda 2.6.3\"", ":checker \"agda\""),
+            "and a version",
+        ),
+        (
+            "raw carriage return in a deed string",
+            listing(&[("M\r.agda", SHA_A)]),
+            "raw control character",
         ),
     ];
     for (what, src, expect) in cases {
@@ -273,6 +316,83 @@ fn malformed_receipts_are_refused() {
             "{what}: refused for another reason: {err}"
         );
     }
+}
+
+/// An `(import …)` clause for `import_tests`, with the given files and the
+/// digest that a correct clause carries unless `digest` overrides it.
+fn with_import(repo: &str, files: &[(String, String)], digest: Option<&str>) -> String {
+    let d = digest.map_or_else(|| manifest_digest(files), str::to_string);
+    let fs: String = files
+        .iter()
+        .map(|(p, s)| format!("(file :path \"{p}\" :sha256 \"{s}\")"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("(import :repository \"{repo}\" :commit \"{COMMIT}\" :inputs-sha256 \"{d}\" {fs})")
+}
+
+#[test]
+fn imports_are_checked_like_the_home_manifest() {
+    let extra = format!(":verdict proven {CLEAN}");
+    let base = deed(&extra, "current");
+    let one = vec![("lib/L.agda".to_string(), SHA_A.to_string())];
+    let add =
+        |clause: String| base.replace("(inputs-manifest", &format!("{clause} (inputs-manifest"));
+    // A correct import is accepted.
+    assert!(ReceiptDeed::parse(&add(with_import("o/lib", &one, None))).is_ok());
+    // Refusals, each for its own reason.
+    let bad = [
+        (
+            add(with_import("o/lib", &one, Some(&"0".repeat(64)))),
+            "is not the SHA-256 of its files",
+        ),
+        (add(with_import("not-a-repo", &one, None)), "OWNER/REPO"),
+        (
+            add(format!(
+                "{} {}",
+                with_import("o/lib", &one, None),
+                with_import("O/Lib", &one, None)
+            )),
+            "listed twice",
+        ),
+        (add(with_import("o/lib", &[], None)), "lists no file"),
+    ];
+    for (src, expect) in bad {
+        let err = format!("{:#}", ReceiptDeed::parse(&src).unwrap_err());
+        assert!(err.contains(expect), "{expect}: {err}");
+    }
+}
+
+#[test]
+fn backend_names_map_to_deed_provers() {
+    assert_eq!(deed_prover_for_backend("agda"), "agda");
+    assert_eq!(deed_prover_for_backend("agda-cubical"), "agda");
+    assert_eq!(deed_prover_for_backend("coq"), "rocq");
+    assert_eq!(deed_prover_for_backend("lean4"), "lean");
+    assert_eq!(deed_prover_for_backend("idris2"), "idris2");
+    // The agda leg is found from the cubical backend's name.
+    let d = ReceiptDeed::parse(&deed(&format!(":verdict proven {CLEAN}"), "current")).unwrap();
+    assert_eq!(
+        d.derive_for_backend("M", "agda-cubical", &digest()).verdict,
+        Verdict::Proven
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn worktree_manifest_refuses_symbolic_links() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret"), b"x").unwrap();
+    std::fs::create_dir(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src/M.agda"), b"m").unwrap();
+    std::os::unix::fs::symlink(outside.path().join("secret"), dir.path().join("link.agda"))
+        .unwrap();
+    std::os::unix::fs::symlink(dir.path().join("src"), dir.path().join("alias")).unwrap();
+    for p in ["link.agda", "alias/M.agda"] {
+        let e = worktree_manifest(dir.path(), &[p.to_string()]).unwrap_err();
+        assert!(e.to_string().contains("symbolic link"), "{p}: {e}");
+    }
+    assert!(worktree_manifest(dir.path(), &["src/M.agda".to_string()]).is_ok());
 }
 
 #[test]
@@ -291,6 +411,14 @@ fn worktree_manifest_sorts_bytewise_and_digests() {
     assert_eq!(files[0].1, sha256_hex(b"name: b\n"));
     assert_eq!(d, manifest_digest(&files));
     assert!(worktree_manifest(dir.path(), &["../x".to_string()]).is_err());
+    // A carriage return can reach the path rule only through this API (a
+    // deed string cannot hold one); `sha256sum` escapes it, so it is refused.
+    std::fs::write(dir.path().join("C\r.agda"), b"c").unwrap();
+    let e = worktree_manifest(dir.path(), &["C\r.agda".to_string()]).unwrap_err();
+    assert!(
+        e.to_string().contains("control character or a backslash"),
+        "{e}"
+    );
     assert!(worktree_manifest(dir.path(), &[]).is_err());
 }
 
