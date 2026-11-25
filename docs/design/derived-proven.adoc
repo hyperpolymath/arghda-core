@@ -2,7 +2,7 @@
 = Design note: proven-ness derived from receipts
 :toc: macro
 
-Status: *proposal for owner review*. No code is written yet. This note
+Status: *proposal, partly ruled*. No code is written yet. This note
 records the problem, the owner's rulings so far, the evidence from two
 experiments, and the questions still open.
 
@@ -36,6 +36,24 @@ content-hash closure. But nothing catches a file the prover rejects.
   a format.
 * `arghda check` applies the reasoning graph's lint caps (done in
   hyperpolymath/arghda-core#66).
+
+== Owner rulings (2026-11-25)
+
+* *Gap 3:* the lint-capped verdict and any lint hard block become fields of
+  the proof-receipt profile, proposed *upstream* in
+  `metadatastician/standards` (deed spec and `deed_lint.js`). arghda does not
+  carry a side record. A receipt then states its own verdict, and a reader
+  can check it without trusting the writer.
+* *Gap 1:* uncommitted local runs get a *workspace-receipt profile*, also
+  proposed upstream, keyed by the input digest instead of a commit. It goes
+  in the same standards change as gap 3.
+* *Migration:* both. A file in `proven/` with no matching receipt reads
+  `unknown` until it is promoted again through `check`. An
+  `arghda migrate` command is also offered: it re-checks each such file
+  once and writes receipts only for those that pass.
+
+Until the standards change lands, arghda writes no receipts; the reader
+side can be built and tested against fixtures in the proposed shape.
 
 == Evidence
 
@@ -157,7 +175,8 @@ Checked against standards `1-formats/deed/tools/deed_lint.js`:
 * *Gap 1, uncommitted local runs.* `:source-commit` and each receipt's
   `:commit` must be a full 40-character commit, and each receipt's `:run`
   is required. Files in `inbox/` and `working/` are usually uncommitted,
-  and a local `promote` has no CI run to cite.
+  and a local `promote` has no CI run to cite. *Ruled 2026-11-25:* a
+  workspace-receipt profile, proposed upstream.
 * *Gap 2, granularity.* A receipt sits in a per-theorem `claim`, while
   arghda's unit is a file. The proposal is one `claim` per module, with the
   module name as `:id`.
@@ -178,8 +197,8 @@ Checked against standards `1-formats/deed/tools/deed_lint.js`:
      (the receipt's existence then carries the verdict, which a reader
      cannot verify on its own).
 
-  Which, and where the evidence is validated, must be decided before the
-  receipt rule can be implemented.
+  *Ruled 2026-11-25: the first.* The fields are proposed upstream, and the
+  linter validates them.
 
 === The invariant, and how to prove it
 
@@ -199,31 +218,26 @@ order-independent. That is a small lemma to prove next to it, and
 
 == Open questions for the owner
 
-. *Gap 1.* Which option for uncommitted files?
-.. Write receipts only for committed files: `promote` requires the file to
-   be committed. Strict, and fits the schema unchanged.
-.. Keep a local ledger in the same field vocabulary, keyed by worktree
-   digest, and export a real proof-receipt deed once the file is committed.
-.. Propose a `workspace-receipt` profile upstream in standards: the schema
-   change made at its source (doctrine 14), but outside this repository.
+Gap 1, gap 3 and migration were ruled on 2026-11-25 (above). Still open:
+
 . *Gap 2.* Is one `claim` per module acceptable as the mapping?
-. *Migration.* What do existing `proven/` files without receipts become:
-  `unknown` until re-promoted, or re-checked once by a migration command?
 . *Where the receipt lives.* Is a workspace receipt a
   `verification/receipts/*_praxis.deed` in the workspace's own repository, or
   under `.arghda/`?
-. *Gap 3.* Where is the lint outcome recorded: a new receipt field proposed
-  upstream in standards, or a separate arghda record keyed by the same input
-  digest?
 . *Binding.* Which rule binds a result to its inputs: snapshot, digest twice,
   or lock? The snapshot is preferred above.
 
-== Plan once these are settled
+== Plan
 
+. Propose upstream in `metadatastician/standards`: the verdict and
+  hard-block fields (gap 3) and the workspace-receipt profile (gap 1), with
+  positive and negative `deed_lint.js` tests.
 . Measure disagreement on a real workspace (echo-types), using the
   current-behaviour reproduction above as the test.
-. Receipt writer and reader, with known-answer tests, including the
-  lint-clean-but-rejected case above as a regression test.
-. `promote` gated on `check`; `workspace_verdicts` reading receipts.
+. Receipt reader, with known-answer tests in the proposed shape, including
+  the lint-clean-but-rejected case above as a regression test; `unknown`
+  for a `proven/` file with no matching receipt.
+. Receipt writer once the standards change lands; `promote` gated on
+  `check`; `workspace_verdicts` reading receipts; `arghda migrate`.
 . Creusot (Pearlite) and Verus scopes for the invariant, recorded in
   `docs/status/PROOF-STATUS.adoc`.
