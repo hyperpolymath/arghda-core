@@ -370,9 +370,21 @@ mod tests {
 
     #[test]
     fn nested_and_empty_comments() {
-        let v = code_view("{- a {- b -} ?in -} {--} y = ?out\n");
-        assert!(!v.contains("?in"));
-        assert!(v.contains("?out"));
+        // Checked with Idris2 0.7.0 (`idris2 --check` and `:m`):
+        // * a nested `{--}` opens and closes at once, so `?out` is a hole;
+        let v = code_view("{- a {--} b -} y = ?out\n");
+        assert!(v.contains("?out"), "{v:?}");
+        let v = code_view("{- a {- b -} ?in -} y = ?out\n");
+        assert!(!v.contains("?in") && v.contains("?out"));
+        // * a top-level `{--}` does NOT close: it opens a comment that runs
+        //   to the next `-}`, so Idris2 reports no hole here, and neither
+        //   does the view;
+        let v = code_view("{--}\nx = ?h\n-}\ny = ?out\n");
+        assert!(!v.contains("?h") && v.contains("?out"), "{v:?}");
+        // * with no `-}` at all it runs to the end of the file (Idris2
+        //   reports no hole). The view does not follow that: it keeps the
+        //   rest verbatim and over-reports, by the fail-closed rule.
+        assert!(code_view("{--} x = ?h\n").contains("?h"));
     }
 
     #[test]
