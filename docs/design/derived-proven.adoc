@@ -115,10 +115,59 @@ Conclusions:
   A receipt plus a digest comparison costs about 0.2 s at 3000 modules.
 * *Running the prover once at promotion is affordable.* That cost is paid
   once per change, not on every query.
-* *Not measured yet:* how often "in `proven/`" disagrees with "has a
-  matching receipt" on a real workspace. The echo-types corpus is not
-  reachable from the session that wrote this note. That run is the first
-  step of the implementation PR.
+=== echo-types, measured 2026-11-25
+
+`hyperpolymath/echo-types` at `140002f1079a2527301735a3621b169b75df4622`,
+`proofs/agda`, release build. echo-types is *not* an arghda workspace: it has
+no `proven/` directory and no proof-receipt deeds (`docs/receipts/` holds
+logs). So "in `proven/`" against "has a matching receipt" is zero against
+zero there, and cannot be measured as first planned. What was measured:
+
+.Cost of deriving, on a real corpus
+|===
+|Step |Result
+
+|Modules, import edges |152, 552
+|`arghda scan` (lint all modules) |2.06 s
+|`arghda dag` |1.83 s
+|§8.5.1 digest of every module's input set (cone plus `echo-types.agda-lib`) |10–17 ms for all 152
+|Input-set size (files) |min 2, median 5, max 113
+|===
+
+One digest (`AntiEcho`) was recomputed with the standards shell line
+(`LC_ALL=C sort | xargs sha256sum | sha256sum`) and matched. Hashing is
+negligible; the import graph dominates. `dag` took 1.83 s here against
+135 ms for 3000 synthetic modules, so the real files' size, not the module
+count, drives it. That is not yet profiled.
+
+.What a receipt would record (lint pack, all 152 modules)
+|===
+|Finding |Files
+
+|any hard block |12
+|`orphan-module` (hard block) |12
+|`missing-safe-pragma` (hard block) |2
+|`unjustified-postulate` (hard block) |1
+|`unpinned-headline` (warn) |78
+|===
+
+* The two pragma findings and the postulate are the cubical module and the
+  quarantined postulate module that echo-types' own `PROOF-STATUS.adoc`
+  already declares outside the `--without-K` suite. The lint agrees with the
+  repository's own account.
+* Of the 12 orphans, 2 are checked by CI through their own invocations
+  (`NarrowingSmoke` in `scripts/check-grade3.sh`, the cubical module in
+  `.github/workflows/agda.yml`). arghda's default roots (`All`/`Smoke`) do
+  not see those, so a receipt writer must take the CI's entry points
+  (`--entry`) or it will block modules that CI does check.
+* The other 10 are reached by no root and named in no CI file, yet all 10 are
+  named in the docs. One, `EchoFidelity`, is described as "type-checked
+  under Agda 2.6.3 / stdlib 2.3 on 2026-10-19", a dated claim that nothing
+  re-checks. That is the disagreement the receipt rule is for: under
+  receipts, that claim would read `unknown` as soon as an input changed.
+* *Not run:* the provers. echo-types pins Agda 2.7.0.1 and depends on
+  `absolute-zero`; this container has Agda 2.6.3, so the
+  lint-clean-but-rejected count is not measured here.
 
 == Design
 
@@ -221,9 +270,14 @@ Checked against standards `1-formats/deed/tools/deed_lint.js`:
   the `agda` leg may have `:route source`. Those rules fit theory theorems,
   where Agda is the source of truth (PROOF-POLICY §2). An arghda workspace
   can hold Idris2, Lean, Coq, Isabelle, Mizar or SMT modules, whose only leg
-  is not Agda. The workspace-receipt profile has to allow a claim whose one
-  leg is the module's own prover. This joins the upstream proposal; it needs
-  an owner ruling there, since it touches the theory profile's rules.
+  is not Agda. *Ruled 2026-11-25: both profiles.* The proposal lets a claim
+  in either `workspace-receipt` or `proof-receipt` have the module's own
+  prover as its single leg, which also covers engineering claims (Idris2
+  ABIs, SPARK). This touches the PWG theory rules, so the proposal must keep
+  §8 grading unchanged for theory claims: a claim without an Agda source leg
+  stays `ungraded` and can never derive a `PWG-` grade.
+* *Order (ruled 2026-11-25):* measure echo-types before the proposal goes
+  upstream, so the proposal carries real disagreement numbers.
 
 === The reader (built 2026-11-25, fixture-first)
 
