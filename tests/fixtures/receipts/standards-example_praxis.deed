@@ -1,0 +1,39 @@
+;; SPDX-License-Identifier: CC-BY-SA-4.0
+;; SPDX-FileCopyrightText: 2026 Jonathan D.A. Jewell (hyperpolymath)
+;; A worked proof receipt (PROOF-POLICY §8.5): one Agda leg with a current
+;; receipt and a superseded one, both recheck legs unavailable, so every claim
+;; derives to PWG-3. The current receipt carries its inputs digest and the
+;; axioms its checker reported (none). Run URLs, commits and digests are
+;; illustrative.
+(praxis-deed
+  :schema-version "1.0.0"
+  :canonical-name "example-proof-receipt"
+  :beholding-chora #u8"chora:estate/github.com/o"
+  :profile proof-receipt
+  :repository "hyperpolymath/example"
+  :source-commit "0123456789abcdef0123456789abcdef01234567"
+  (trusted-base
+    (primitive :prover agda :module "Agda.Primitive" :name "Level" :binding "BUILTIN LEVEL")
+    (primitive :prover agda :module "Agda.Primitive" :name "lzero" :binding "BUILTIN LEVELZERO")
+    (primitive :prover agda :module "Agda.Primitive" :name "lsuc" :binding "BUILTIN LEVELSUC")
+    (primitive :prover agda :module "Agda.Primitive" :name "_⊔_" :binding "BUILTIN LEVELMAX"))
+  (claim :id "T-1" :pwg PWG-3 :foundation-diverse #f
+    (leg :prover agda :route source :token proven :state AGDA-VERIFIED
+      (receipt :run "https://github.com/hyperpolymath/example/actions/runs/2"
+               :commit "0123456789abcdef0123456789abcdef01234567"
+               :checker "agda 2.6.4.3"
+               :invocation "agda --safe --without-K --cubical-compatible"
+               :inputs-sha256 "c8945990a8e4242d7eaeaa42dd4e647a4e372fdbd32714fb534744df85066248"
+               :state current
+               (inputs-manifest
+                 (file :path "example.agda-lib" :sha256 "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
+                 (file :path "src/Example.agda" :sha256 "a1b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+               (axioms))
+      (receipt :run "https://github.com/hyperpolymath/example/actions/runs/1"
+               :commit "fedcba9876543210fedcba9876543210fedcba98"
+               :checker "agda 2.6.4.3"
+               :invocation "agda --safe --without-K"
+               :state superseded
+               :reason "before --cubical-compatible joined the gate"))
+    (leg :prover rocq :route unavailable :reason "no transport or hand re-proof yet")
+    (leg :prover lean :route unavailable :reason "no transport or hand re-proof yet")))

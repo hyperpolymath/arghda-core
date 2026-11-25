@@ -2,7 +2,7 @@
 = Design note: proven-ness derived from receipts
 :toc: macro
 
-Status: *design ruled; implementation not started*. No code is written yet. This note
+Status: *design ruled; receipt reader built, writer not started*. This note
 records the problem, the owner's rulings so far, the evidence from two
 experiments, and the questions still open.
 
@@ -216,6 +216,36 @@ Checked against standards `1-formats/deed/tools/deed_lint.js`:
   *Ruled 2026-11-25: the first.* The fields are proposed upstream, and the
   linter validates them.
 
+* *Gap 4, non-Agda modules* (found while building the reader,
+  2026-11-25). `deed_lint.js` refuses a `claim` with no `agda` leg, and only
+  the `agda` leg may have `:route source`. Those rules fit theory theorems,
+  where Agda is the source of truth (PROOF-POLICY §2). An arghda workspace
+  can hold Idris2, Lean, Coq, Isabelle, Mizar or SMT modules, whose only leg
+  is not Agda. The workspace-receipt profile has to allow a claim whose one
+  leg is the module's own prover. This joins the upstream proposal; it needs
+  an owner ruling there, since it touches the theory profile's rules.
+
+=== The reader (built 2026-11-25, fixture-first)
+
+`src/receipt/` reads proof-receipt deeds and the proposed shape, and
+derives a module's verdict:
+
+* `sexp.rs` is a small fail-closed reader for the deed syntax.
+* `mod.rs` checks the §8.5.1 manifest rules (bytewise order, no repeats,
+  path rules, 64-hex digests, the digest rebuilt from the manifest), closed
+  field sets, lineage states, and at most one current receipt per leg.
+  `ReceiptDeed::derive` gives `proven` only when the receipt rule holds;
+  anything missing gives `unknown`, and a hard block is never better than
+  `unknown`.
+* The tests cross-check the digest against the standards worked example, cover
+  each refusal for its own reason, and check the rule exhaustively over 320
+  receipt shapes. Nine mutations of the checks were each caught.
+
+Not done yet: the `.arghda/` index, wiring into `workspace_verdicts`, and
+the writer. None of them should land before the standards change, because
+until then every `proven/` file would read `unknown` with no way to
+re-promote it.
+
 === The invariant, and how to prove it
 
 ----
@@ -247,8 +277,8 @@ All six questions were ruled on 2026-11-25 (above). None is open.
   current-behaviour reproduction above as the test.
 . Propose upstream in `metadatastician/standards`, with the reader as
   evidence: the verdict and hard-block fields (gap 3), the
-  workspace-receipt profile (gap 1) and the theorem list (gap 2), with
-  positive and negative `deed_lint.js` tests.
+  workspace-receipt profile (gap 1), the theorem list (gap 2) and single
+  non-Agda legs (gap 4), with positive and negative `deed_lint.js` tests.
 . Receipt writer once the standards change lands: snapshot plus
   digest-twice binding; `promote` gated on `check`; `workspace_verdicts`
   reading receipts; `arghda migrate`.

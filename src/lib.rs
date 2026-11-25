@@ -22,6 +22,7 @@ pub mod lint;
 pub mod proven;
 pub mod prover;
 pub mod reason;
+pub mod receipt;
 pub mod timestamp;
 pub mod unused;
 pub mod watcher;
