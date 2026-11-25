@@ -169,28 +169,94 @@ pub fn blank_block_comments(src: &str) -> String {
     out
 }
 
-/// The part of an Agda `line` before a trailing ` --` line comment, ignoring
-/// any ` --` inside a `"…"` string literal (Codex review on #66: a string
-/// holding ` --` used to cut the line before the code that followed it).
-pub fn code_before_line_comment(line: &str) -> &str {
+/// The code of one Agda `line`, for token checks. String-literal contents
+/// are blanked to spaces (the quotes stay), and a trailing ` --` line
+/// comment outside a string is dropped. Codex review on #66: a string
+/// holding ` --` used to cut the line before the code after it (P1), and a
+/// string holding ` believe_me ` used to read as a trust primitive (P2).
+///
+/// Fail-closed: blanking text that is code could hide an escape hatch,
+/// while leaving text visible can only add a warning. So a char literal
+/// (`'"'`, `'\''`) is copied as it is and never opens a string, and a
+/// string that is not closed on its line stays visible from its opening
+/// quote to the end of the line.
+pub fn agda_line_code(line: &str) -> String {
     let b = line.as_bytes();
-    let mut in_str = false;
+    let mut out = String::with_capacity(line.len());
     let mut i = 0;
     while i < b.len() {
-        if in_str {
-            match b[i] {
-                b'\\' => i += 1,
-                b'"' => in_str = false,
-                _ => {}
+        let at_token_start = i == 0 || is_agda_delim(b[i - 1]);
+        if b[i] == b'\'' && at_token_start {
+            if let Some(end) = char_literal_end(line, i) {
+                out.push_str(&line[i..end]);
+                i = end;
+                continue;
             }
-        } else if b[i] == b'"' {
-            in_str = true;
-        } else if b[i..].starts_with(b" --") {
-            return &line[..i];
         }
-        i += 1;
+        if b[i] == b'"' {
+            match string_end(b, i) {
+                Some(end) => {
+                    out.push('"');
+                    out.extend(line[i + 1..end - 1].chars().map(|_| ' '));
+                    out.push('"');
+                    i = end;
+                }
+                None => {
+                    out.push_str(&line[i..]);
+                    i = b.len();
+                }
+            }
+            continue;
+        }
+        if b[i..].starts_with(b" --") {
+            break;
+        }
+        let ch = line[i..].chars().next().expect("in bounds");
+        out.push(ch);
+        i += ch.len_utf8();
     }
-    line
+    out
+}
+
+fn is_agda_delim(c: u8) -> bool {
+    c.is_ascii_whitespace() || b"(){};@\"".contains(&c)
+}
+
+/// Index just past the `"` that closes the string opening at `start`, or
+/// `None` when it is not closed on this line.
+fn string_end(b: &[u8], start: usize) -> Option<usize> {
+    let mut j = start + 1;
+    while j < b.len() {
+        match b[j] {
+            b'\\' => j += 2,
+            b'"' => return Some(j + 1),
+            _ => j += 1,
+        }
+    }
+    None
+}
+
+/// Index just past a char literal opening at `start`: `'x'` (one character,
+/// possibly multi-byte) or an escape such as `'\''`, `'\n'`, `'\x41'`.
+/// `None` when no char literal starts there.
+fn char_literal_end(line: &str, start: usize) -> Option<usize> {
+    let b = line.as_bytes();
+    if b.get(start + 1) == Some(&b'\\') {
+        // The escape body runs from start + 2 to the next `'` after it.
+        let from = start + 3;
+        let close = from + b.get(from..)?.iter().position(|&c| c == b'\'')?;
+        let body = &b[start + 2..close];
+        return body
+            .iter()
+            .all(|c| !c.is_ascii_whitespace())
+            .then_some(close + 1);
+    }
+    let ch = line.get(start + 1..)?.chars().next()?;
+    if ch == '\'' {
+        return None;
+    }
+    let close = start + 1 + ch.len_utf8();
+    (b.get(close) == Some(&b'\'')).then_some(close + 1)
 }
 
 /// Byte index just past the `-}` that closes the block comment opened at

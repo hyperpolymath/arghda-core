@@ -50,10 +50,11 @@ impl LintRule for EscapeHatch {
                     }
                 }
             }
-            // Trust primitives, ignoring any trailing line comment.
-            let code = super::code_before_line_comment(line);
+            // Trust primitives, outside string literals and any trailing
+            // line comment.
+            let code = super::agda_line_code(line);
             for prim in TRUST_PRIMS {
-                if has_token(code, prim) {
+                if has_token(&code, prim) {
                     report.push(warn(
                         self.name(),
                         file,
@@ -141,6 +142,41 @@ mod tests {
         // inside the string and hide `primTrustMe`.
         let r = lint_str("module M where\nx = let s = \" --\" in primTrustMe\n");
         assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+    }
+
+    #[test]
+    fn trust_primitive_inside_a_string_is_not_code() {
+        // Codex review on #66 (P2): string contents capped a safe proof.
+        for body in [
+            "x = \" believe_me \"\n",
+            "x = \"primTrustMe\"\n",
+            "x = \"say \\\" believe_me \\\" here\"\n",
+            "x = (\"a\" , \" believe_me \")\n",
+        ] {
+            let r = lint_str(&format!("module M where\n{body}"));
+            assert!(r.diagnostics.is_empty(), "{body:?}: {:?}", r.diagnostics);
+        }
+    }
+
+    #[test]
+    fn code_around_strings_and_char_literals_is_still_seen() {
+        // Fail-closed: anything outside a closed string stays visible.
+        for body in [
+            // After a closed string.
+            "x = f \" ok \" believe_me\n",
+            // A char literal holding a quote does not open a string, so a
+            // later string on the line cannot close it over the primitive.
+            "x = g '\"' believe_me \"s\"\n",
+            "x = g '\\\"' primTrustMe \"s\"\n",
+            "x = g '\\'' believe_me \"s\"\n",
+            // An identifier with a prime, then a string, then the primitive.
+            "x' = h x' \"s\" believe_me\n",
+            // A string not closed on its line stays visible.
+            "x = \" believe_me\n",
+        ] {
+            let r = lint_str(&format!("module M where\n{body}"));
+            assert_eq!(r.warns().count(), 1, "{body:?}: {:?}", r.diagnostics);
+        }
     }
 
     #[test]
