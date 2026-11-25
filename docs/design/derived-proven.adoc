@@ -2,7 +2,7 @@
 = Design note: proven-ness derived from receipts
 :toc: macro
 
-Status: *proposal, partly ruled*. No code is written yet. This note
+Status: *design ruled; implementation not started*. No code is written yet. This note
 records the problem, the owner's rulings so far, the evidence from two
 experiments, and the questions still open.
 
@@ -54,6 +54,22 @@ content-hash closure. But nothing catches a file the prover rejects.
 
 Until the standards change lands, arghda writes no receipts; the reader
 side can be built and tested against fixtures in the proposed shape.
+
+Second round, same day:
+
+* *Order of work: fixture-first.* arghda's receipt reader is built first,
+  against fixture receipts in the proposed shape. The standards proposal
+  follows, with a working consumer as its evidence.
+* *Gap 2:* one `claim` per module, `:id` the module name, which also
+  *lists* the module's headline theorems without grading them. Listing them
+  needs a field the profile lacks, so it joins the upstream proposal.
+* *Location:* canonical receipts are `verification/receipts/*_praxis.deed`
+  in the workspace's own repository, where other estate readers find them.
+  `.arghda/` holds only a derived index for speed; it is never evidence,
+  and a reader that finds the two disagreeing trusts the receipt and
+  rebuilds the index.
+* *Binding:* the snapshot rule, plus a digest taken before and after
+  `check` on the snapshot as an extra guard. A mismatch writes no receipt.
 
 == Evidence
 
@@ -218,26 +234,23 @@ order-independent. That is a small lemma to prove next to it, and
 
 == Open questions for the owner
 
-Gap 1, gap 3 and migration were ruled on 2026-11-25 (above). Still open:
-
-. *Gap 2.* Is one `claim` per module acceptable as the mapping?
-. *Where the receipt lives.* Is a workspace receipt a
-  `verification/receipts/*_praxis.deed` in the workspace's own repository, or
-  under `.arghda/`?
-. *Binding.* Which rule binds a result to its inputs: snapshot, digest twice,
-  or lock? The snapshot is preferred above.
+All six questions were ruled on 2026-11-25 (above). None is open.
 
 == Plan
 
-. Propose upstream in `metadatastician/standards`: the verdict and
-  hard-block fields (gap 3) and the workspace-receipt profile (gap 1), with
-  positive and negative `deed_lint.js` tests.
+. Receipt reader, against fixture receipts in the proposed shape, with
+  known-answer tests: the lint-clean-but-rejected case above as a
+  regression test; `unknown` for a `proven/` file with no matching receipt;
+  a stale digest; a receipt with a hard block; an `.arghda/` index that
+  disagrees with its receipt.
 . Measure disagreement on a real workspace (echo-types), using the
   current-behaviour reproduction above as the test.
-. Receipt reader, with known-answer tests in the proposed shape, including
-  the lint-clean-but-rejected case above as a regression test; `unknown`
-  for a `proven/` file with no matching receipt.
-. Receipt writer once the standards change lands; `promote` gated on
-  `check`; `workspace_verdicts` reading receipts; `arghda migrate`.
+. Propose upstream in `metadatastician/standards`, with the reader as
+  evidence: the verdict and hard-block fields (gap 3), the
+  workspace-receipt profile (gap 1) and the theorem list (gap 2), with
+  positive and negative `deed_lint.js` tests.
+. Receipt writer once the standards change lands: snapshot plus
+  digest-twice binding; `promote` gated on `check`; `workspace_verdicts`
+  reading receipts; `arghda migrate`.
 . Creusot (Pearlite) and Verus scopes for the invariant, recorded in
   `docs/status/PROOF-STATUS.adoc`.
