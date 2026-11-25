@@ -51,7 +51,7 @@ impl LintRule for EscapeHatch {
                 }
             }
             // Trust primitives, ignoring any trailing line comment.
-            let code = line.split(" --").next().unwrap_or(line);
+            let code = super::code_before_line_comment(line);
             for prim in TRUST_PRIMS {
                 if has_token(code, prim) {
                     report.push(warn(
@@ -133,6 +133,14 @@ mod tests {
     fn clean_file_is_silent() {
         let r = lint_str("module M where\nf : Set\nf = Set\n");
         assert!(r.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn dash_dash_in_a_string_does_not_hide_code() {
+        // Codex review on #66 (P1): the trailing-comment cut used to fire
+        // inside the string and hide `primTrustMe`.
+        let r = lint_str("module M where\nx = let s = \" --\" in primTrustMe\n");
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
     }
 
     #[test]
