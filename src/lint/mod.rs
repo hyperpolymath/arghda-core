@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 pub mod coq;
 pub mod escape_hatch;
 pub mod idris2;
+pub mod idris2_lex;
 pub mod isabelle;
 pub mod lean;
 pub mod orphan_module;
@@ -96,9 +97,9 @@ pub fn run_lints(
     Ok(report)
 }
 
-/// Blank out Haskell-style block comments `{- … -}` (Agda, Idris2), which
-/// nest, so that text inside them is not mistaken for code by the
-/// line-based lint rules. Every character inside a comment becomes a space
+/// Blank out Agda block comments `{- … -}`, which nest, so that text inside
+/// them is not mistaken for code by the line-based lint rules. (Idris2 lexes
+/// comments and strings differently and uses [`idris2_lex::code_view`].) Every character inside a comment becomes a space
 /// except newlines, so line numbers are unchanged.
 ///
 /// Fail-closed by construction: text is blanked only when it is certainly
@@ -166,6 +167,30 @@ pub fn blank_block_comments(src: &str) -> String {
         }
     }
     out
+}
+
+/// The part of an Agda `line` before a trailing ` --` line comment, ignoring
+/// any ` --` inside a `"…"` string literal (Codex review on #66: a string
+/// holding ` --` used to cut the line before the code that followed it).
+pub fn code_before_line_comment(line: &str) -> &str {
+    let b = line.as_bytes();
+    let mut in_str = false;
+    let mut i = 0;
+    while i < b.len() {
+        if in_str {
+            match b[i] {
+                b'\\' => i += 1,
+                b'"' => in_str = false,
+                _ => {}
+            }
+        } else if b[i] == b'"' {
+            in_str = true;
+        } else if b[i..].starts_with(b" --") {
+            return &line[..i];
+        }
+        i += 1;
+    }
+    line
 }
 
 /// Byte index just past the `-}` that closes the block comment opened at

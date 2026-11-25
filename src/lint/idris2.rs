@@ -41,17 +41,14 @@ impl LintRule for Idris2EscapeHatch {
     fn run(&self, file: &Path, _ctx: &LintContext<'_>, report: &mut LintReport) -> Result<()> {
         let contents =
             fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
-        // Text inside `{- … -}` block comments is not code.
-        let contents = super::blank_block_comments(&contents);
+        // Scan the code view: comments and literal contents are blanked by
+        // the Idris2 lexer's rules (`super::idris2_lex`), fail-closed.
+        let contents = super::idris2_lex::code_view(&contents);
         for (i, line) in contents.lines().enumerate() {
             let trimmed = line.trim_start();
-            if trimmed.starts_with("--") {
-                continue; // whole-line comment
-            }
-            // Everything below ignores a trailing line comment.
-            let code = line.split(" --").next().unwrap_or(line);
-            // The `%default partial` directive turns off totality checking
-            // file-wide.
+            let code = line; // comments are already blank in the code view
+                             // The `%default partial` directive turns off totality checking
+                             // file-wide.
             if trimmed.starts_with("%default") && trimmed.contains("partial") {
                 report.push(warn(
                     self.name(),
@@ -82,9 +79,9 @@ impl LintRule for Idris2EscapeHatch {
                 }
             }
             // Totality holes `?name` — incomplete terms/proofs that `--check`
-            // defers rather than rejects. String literals are blanked first so
-            // a `"?x"` inside a string does not match.
-            for hole in holes(&strip_strings(code)) {
+            // defers rather than rejects. String contents are already blank
+            // in the code view, so a `"?x"` inside a string does not match.
+            for hole in holes(code) {
                 report.push(warn(
                     self.name(),
                     file,
@@ -95,32 +92,6 @@ impl LintRule for Idris2EscapeHatch {
         }
         Ok(())
     }
-}
-
-/// Blank out double-quoted string literals (content → spaces), honouring `\"`
-/// escapes, so a `?name` inside a string is not mistaken for a hole.
-fn strip_strings(line: &str) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut in_str = false;
-    let mut escaped = false;
-    for c in line.chars() {
-        if in_str {
-            if escaped {
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '"' {
-                in_str = false;
-            }
-            out.push(' ');
-        } else if c == '"' {
-            in_str = true;
-            out.push(' ');
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }
 
 /// The hole names in `code`: a `?` that begins a token (start of line or after
@@ -224,6 +195,27 @@ mod tests {
         assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
         let r = lint_str("module M\n\nnote : String\nnote = \"{-\"\nx : Nat\nx = ?todo\n");
         assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+    }
+
+    #[test]
+    fn review_inputs_on_66_still_report_the_hole() {
+        // Each input once hid `?todo` from this rule (Codex P1 and four
+        // CodeRabbit findings on #66). Each must report exactly the hole.
+        for src in [
+            "module M\n\ng : Nat\ng = let s = \" --\" in ?todo\n",
+            "module M\n||| Example opener: {-\nx : Nat\nx = ?todo\n-- -}\n",
+            "module M\nnote : String\nnote = \"\"\"\n  {-\n  \"\"\"\nx : Nat\nx = ?todo\n-- -}\n",
+            "module M\nnote : String\nnote = #\"a \"{-\"#\nx : Nat\nx = ?todo\n-- -}\n",
+            "module M\n{- example \"{-\" -}\nx : Nat\nx = ?todo\n-- -}\n",
+        ] {
+            let r = lint_str(src);
+            let holes: Vec<_> = r
+                .diagnostics
+                .iter()
+                .filter(|d| d.message.contains("?todo"))
+                .collect();
+            assert_eq!(holes.len(), 1, "{src:?}: {:?}", r.diagnostics);
+        }
     }
 
     #[test]

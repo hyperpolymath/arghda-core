@@ -42,8 +42,13 @@ content-hash closure. But nothing catches a file the prover rejects.
 * *Gap 3:* the lint-capped verdict and any lint hard block become fields of
   the proof-receipt profile, proposed *upstream* in
   `metadatastician/standards` (deed spec and `deed_lint.js`). arghda does not
-  carry a side record. A receipt then states its own verdict, and a reader
-  can check it without trusting the writer.
+  carry a side record. A receipt then states its own verdict, so a reader
+  can evaluate the receipt rule from the receipt alone. That does not make
+  the recorded result true: a row records a claim, it does not establish it
+  (PROOF-POLICY §8). A reader that will not trust the writer re-runs the
+  receipt's `:checker` and `:invocation` on the files its
+  `(inputs-manifest …)` names and compares the verdict; the receipt is
+  exactly the data that makes that re-run possible.
 * *Gap 1:* uncommitted local runs get a *workspace-receipt profile*, also
   proposed upstream, keyed by the input digest instead of a commit. It goes
   in the same standards change as gap 3.
@@ -203,6 +208,16 @@ changed at `2c7467bde91bf35d6a26d1838154db50680d3cdb`; an implementation
 must pin the commit it follows, since the script at HEAD can change). It
 replaces arghda's own `closure_hash`, so anyone can recompute a receipt with
 git alone.
+
+That script reads git blobs at a commit, so it cannot hash a new file or the
+edited state of a committed one. A *workspace receipt* (gap 1) therefore
+digests the bytes of the checked snapshot itself, with the same manifest
+format: one `<sha256>  <path>` line per snapshot file, sorted bytewise by
+path, then SHA-256. The receipt reader (hyperpolymath/arghda-core#67)
+implements this as `receipt::worktree_manifest`. For a file whose
+snapshot bytes equal its committed blob, both routes give the same digest,
+which is what lets a workspace receipt be checked again once the file is
+committed.
 
 The standards files this note was checked against (PROOF-POLICY §8.5.1 and
 `1-formats/deed/tools/deed_lint.js`) were read at
