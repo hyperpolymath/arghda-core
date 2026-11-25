@@ -170,9 +170,36 @@ count, drives it. That is not yet profiled.
   under Agda 2.6.3 / stdlib 2.3 on 2026-10-19", a dated claim that nothing
   re-checks. That is the disagreement the receipt rule is for: under
   receipts, that claim would read `unknown` as soon as an input changed.
-* *Not run:* the provers. echo-types pins Agda 2.7.0.1 and depends on
-  `absolute-zero`; this container has Agda 2.6.3, so the
-  lint-clean-but-rejected count is not measured here.
+
+.The prover on every module (2026-11-25)
+|===
+|Result |Modules
+
+|Accepted by Agda |151
+|Rejected by Agda |1
+|*Lint-clean but rejected* |*0*
+|Hard-blocked by lint but accepted by Agda |11
+|===
+
+Toolchain exactly as echo-types' CI pins it, through its own
+`scripts/setup-agda.sh`: Agda 2.7.0.1 (release archive SHA-256 checked),
+agda-stdlib `8326c7475af1fa456ca04a0203c168d5d7ff842b`, absolute-zero
+`8a3162a24c8524735b464bedb9747517dc8b0467`. Each of the 152 modules was
+checked on its own with CI's flags (`--safe --without-K
+--cubical-compatible`; `--safe --cubical` for the cubical module), after
+`All.agda` warmed the interface cache (148 s; per-module pass 604 s).
+
+* The one rejection is the quarantined postulate module ("Cannot postulate
+  … with safe flag"), which the lint also hard-blocks.
+* *No module is lint-clean and rejected by Agda.* On this corpus the lint
+  and the prover agree wherever the lint is silent, so the bug that motivates
+  this note (a rejected file read as proven) does not occur here *today*.
+  The rule still matters: nothing re-checks a file once it sits in
+  `proven/`.
+* The 11 hard-blocked modules that Agda accepts are all orphans, among them
+  `EchoFidelity`. Its dated "type-checked" claim is true under 2.7.0.1 today,
+  but no root or receipt records it (departure row in
+  metadatastician/standards#1706).
 
 == Design
 
