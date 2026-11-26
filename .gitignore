@@ -26,3 +26,5 @@ result-*
 build/
 *.ttc
 *.ttm
+
+node_modules/
