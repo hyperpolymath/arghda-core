@@ -39,6 +39,7 @@ pub use prover::{
     Outcome, Probe, Smt, Verdict,
 };
 pub use reason::{
-    build as build_reason, workspace_verdicts, Junct, ReasonDocument, ReasonEdge, ReasonNode,
+    build as build_reason, cap_by_lints, workspace_verdicts, Junct, ReasonDocument, ReasonEdge,
+    ReasonNode,
 };
 pub use workspace::{StaleEntry, State, Workspace};

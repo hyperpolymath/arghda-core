@@ -91,7 +91,25 @@ pub struct Outcome {
     pub available: bool,
     /// Process exit code, if the process ran.
     pub exit_code: Option<i32>,
-    /// `true` iff the tool exited 0 (assistant) / returned `unsat` (solver).
+    /// `true` iff this raw backend [`Outcome::verdict`] is
+    /// [`Verdict::Proven`]; a solver is `ok` on `unsat`. It describes the
+    /// backend result only, before lint caps, and the backends classify
+    /// differently:
+    ///
+    /// * Lean reads the tool's own output. A clean elaboration is only
+    ///   `Unknown` until a `#print axioms` audit runs; if the audit cannot run
+    ///   it stays `Unknown`, never `Proven`. `sorry` in the output, or
+    ///   `sorryAx` in the audit, makes it `Admitted`; any other axiom outside
+    ///   the standard three (`propext`, `Classical.choice`, `Quot.sound`)
+    ///   makes it `Postulated`. A file whose audit shows only those three is
+    ///   `Proven` and `ok`.
+    /// * Coq and Isabelle scan the *source* after a successful run (for
+    ///   `Admitted`, `sorry`, axioms and the like).
+    /// * Agda and Idris2 read only the exit status. A file the tool accepts
+    ///   despite an Idris2 `?hole`, or a postulate in a non-`--safe` Agda
+    ///   file, is `Proven` and `ok` here. `arghda check` handles these through
+    ///   the lint pack: an unjustified postulate is a hard block (`rejected`),
+    ///   and a hole is capped at `admitted` (`reason::cap_by_lints`).
     pub ok: bool,
     /// Last few lines of combined stdout+stderr (for surfacing errors).
     pub output_tail: String,

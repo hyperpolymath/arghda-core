@@ -30,6 +30,8 @@ impl LintRule for EscapeHatch {
     fn run(&self, file: &Path, _ctx: &LintContext<'_>, report: &mut LintReport) -> Result<()> {
         let contents =
             fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        // Text inside `{- … -}` is not code (pragmas `{-# … #-}` are kept).
+        let contents = super::blank_block_comments(&contents);
         for (i, line) in contents.lines().enumerate() {
             let trimmed = line.trim_start();
             if trimmed.starts_with("--") {
@@ -48,10 +50,11 @@ impl LintRule for EscapeHatch {
                     }
                 }
             }
-            // Trust primitives, ignoring any trailing line comment.
-            let code = line.split(" --").next().unwrap_or(line);
+            // Trust primitives, outside string literals and any trailing
+            // line comment.
+            let code = super::agda_line_code(line);
             for prim in TRUST_PRIMS {
-                if has_token(code, prim) {
+                if has_token(&code, prim) {
                     report.push(warn(
                         self.name(),
                         file,
@@ -131,5 +134,86 @@ mod tests {
     fn clean_file_is_silent() {
         let r = lint_str("module M where\nf : Set\nf = Set\n");
         assert!(r.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn dash_dash_in_a_string_does_not_hide_code() {
+        // Codex review on #66 (P1): the trailing-comment cut used to fire
+        // inside the string and hide `primTrustMe`.
+        let r = lint_str("module M where\nx = let s = \" --\" in primTrustMe\n");
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+    }
+
+    #[test]
+    fn trust_primitive_inside_a_string_is_not_code() {
+        // Codex review on #66 (P2): string contents capped a safe proof.
+        for body in [
+            "x = \" believe_me \"\n",
+            "x = \"primTrustMe\"\n",
+            "x = \"say \\\" believe_me \\\" here\"\n",
+            "x = (\"a\" , \" believe_me \")\n",
+        ] {
+            let r = lint_str(&format!("module M where\n{body}"));
+            assert!(r.diagnostics.is_empty(), "{body:?}: {:?}", r.diagnostics);
+        }
+    }
+
+    #[test]
+    fn code_around_strings_and_char_literals_is_still_seen() {
+        // Fail-closed: anything outside a closed string stays visible.
+        for body in [
+            // After a closed string.
+            "x = f \" ok \" believe_me\n",
+            // A char literal holding a quote does not open a string, so a
+            // later string on the line cannot close it over the primitive.
+            "x = g '\"' believe_me \"s\"\n",
+            "x = g '\\\"' primTrustMe \"s\"\n",
+            "x = g '\\'' believe_me \"s\"\n",
+            // An identifier with a prime, then a string, then the primitive.
+            "x' = h x' \"s\" believe_me\n",
+            // A string not closed on its line stays visible.
+            "x = \" believe_me\n",
+        ] {
+            let r = lint_str(&format!("module M where\n{body}"));
+            assert_eq!(r.warns().count(), 1, "{body:?}: {:?}", r.diagnostics);
+        }
+    }
+
+    #[test]
+    fn believe_me_in_block_comment_is_ignored() {
+        // Codex review on #66: a `{- … -}` mention must not cap a proof.
+        let r = lint_str("module M where\n{- avoid believe_me here -}\nf : Set\nf = Set\n");
+        assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+        let r = lint_str("module M where\n{- multi\n   believe_me\n -}\nf : Set\nf = Set\n");
+        assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
+    }
+
+    #[test]
+    fn brace_dash_in_line_comment_hides_no_pragma() {
+        // CodeRabbit review on #66: an opener in a line comment must not
+        // swallow a following termination pragma.
+        let r = lint_str(
+            "module M where\n-- example opener: {-\n{-# TERMINATING #-}\nf : Set\nf = f\n",
+        );
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+        assert!(r.diagnostics[0].message.contains("TERMINATING"));
+    }
+
+    #[test]
+    fn brace_dash_in_line_comment_or_string_hides_no_code() {
+        // Codex review on #66 (P1): fail-closed against `{-` that does not
+        // open a comment.
+        let r = lint_str("module M where\n-- mention {- here\nx = believe_me 0\n");
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+        let r = lint_str("module M where\nnote = \"{-\"\nx = believe_me 0\n");
+        assert_eq!(r.warns().count(), 1, "{:?}", r.diagnostics);
+    }
+
+    #[test]
+    fn pragma_and_code_after_a_block_comment_are_still_warned() {
+        let r =
+            lint_str("module M where\n{- note -} {-# TERMINATING #-}\nx = {- c -} believe_me 0\n");
+        assert_eq!(r.warns().count(), 2, "{:?}", r.diagnostics);
+        assert_eq!(r.diagnostics[1].line, Some(3));
     }
 }

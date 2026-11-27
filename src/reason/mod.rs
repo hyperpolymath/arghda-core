@@ -153,6 +153,16 @@ fn lint_cap(rule: &str) -> Option<Verdict> {
     }
 }
 
+/// Demote a prover verdict by every soundness cap the given lint rules
+/// impose (see `lint_cap`). `arghda check` uses this; the reasoning
+/// graph's `self_verdict_of` applies the same `lint_cap` + `demote` while
+/// also recording evidence, and `cap_by_lints_agrees_with_the_graph` pins
+/// the two to the same result, so an Idris2 `?hole` or an Agda
+/// `TERMINATING` is `Admitted` in both, never green in one.
+pub fn cap_by_lints<'a>(verdict: Verdict, rules: impl IntoIterator<Item = &'a str>) -> Verdict {
+    rules.into_iter().filter_map(lint_cap).fold(verdict, demote)
+}
+
 /// Derive a node's self-verdict and the evidence string: start from the
 /// supplied prover verdict (or `Unknown` if none was run), then demote by
 /// every lint cap this node's own diagnostics impose.
@@ -460,6 +470,53 @@ mod tests {
         );
         assert_eq!(demote(Verdict::Unknown, Verdict::Proven), Verdict::Unknown);
         assert_eq!(demote(Verdict::Error, Verdict::Refuted), Verdict::Error);
+    }
+
+    #[test]
+    fn cap_by_lints_agrees_with_the_graph() {
+        // `arghda check` (cap_by_lints) and the reasoning graph
+        // (self_verdict_of) must give the same verdict for the same
+        // prover result and lint findings — every prover verdict against
+        // every subset of the soundness-relevant rules plus a neutral one.
+        let all = [
+            Verdict::Proven,
+            Verdict::Admitted,
+            Verdict::Postulated,
+            Verdict::Unknown,
+            Verdict::Unavailable,
+            Verdict::Refuted,
+            Verdict::Error,
+        ];
+        let rules = [
+            "unjustified-postulate",
+            "missing-safe-pragma",
+            "escape-hatch",
+            "tab-mix",
+        ];
+        for &v in &all {
+            for mask in 0u8..(1 << rules.len()) {
+                let fired: Vec<String> = rules
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| mask & (1 << i) != 0)
+                    .map(|(_, r)| r.to_string())
+                    .collect();
+                let mut verdicts = BTreeMap::new();
+                verdicts.insert("M".to_string(), v);
+                let (graph, _) = self_verdict_of("M", &[], &fired, &verdicts);
+                let check = cap_by_lints(v, fired.iter().map(String::as_str));
+                assert_eq!(check, graph, "verdict {v:?}, rules {fired:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn escape_hatch_caps_a_green_prover_at_admitted() {
+        assert_eq!(
+            cap_by_lints(Verdict::Proven, ["escape-hatch"]),
+            Verdict::Admitted
+        );
+        assert_eq!(cap_by_lints(Verdict::Proven, ["tab-mix"]), Verdict::Proven);
     }
 
     #[test]

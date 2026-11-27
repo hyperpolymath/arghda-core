@@ -65,6 +65,13 @@ provision:
 provision-heavy:
     bash scripts/provision-provers.sh --heavy
 
+# Known-answer verdict matrix against the REAL provers (tests/verdicts.rs).
+# Fail-closed: a missing tool fails the run unless its backend is named in
+# ARGHDA_ALLOW_MISSING (e.g. `ARGHDA_ALLOW_MISSING=isabelle just verdicts`).
+# --nocapture so every SKIP line is visible.
+verdicts:
+    cargo test --test verdicts -- --ignored --nocapture
+
 # Report which prover/solver backends are actually runnable, no installs.
 # The `arghda doctor` subcommand probes each binary (`<tool> --version`).
 doctor:

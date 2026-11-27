@@ -484,15 +484,23 @@ fn check(
     let outcome = Dispatch::parse(dispatch)?.run(backend.as_ref(), file, include_root)?;
 
     // Honest verdict: a lint hard-block rejects; otherwise report the
-    // backend's ACTUAL verdict word. Only `Proven` (with no hard block) is
-    // "proven-eligible" — a clean-but-unaudited Lean file is `unknown`, an
-    // SMT `sat` is `refuted`, never silently "rejected"/"ok".
+    // backend's verdict AFTER the same lint caps the reasoning graph applies
+    // (`cap_by_lints`), so a warn-level escape hatch — an Idris2 `?hole`, an
+    // Agda `TERMINATING` — reads `admitted`, never `proven-eligible`. Only an
+    // uncapped `Proven` (with no hard block) is "proven-eligible" — a
+    // clean-but-unaudited Lean file is `unknown`, an SMT `sat` is `refuted`,
+    // never silently "rejected"/"ok". The raw backend verdict is still
+    // reported under `backend.verdict`.
+    let capped = arghda_core::cap_by_lints(
+        outcome.verdict,
+        report.diagnostics.iter().map(|d| d.rule.as_str()),
+    );
     let verdict = if !outcome.available {
         "backend-unavailable"
     } else if report.has_hard_block() {
         "rejected"
     } else {
-        match outcome.verdict {
+        match capped {
             Verdict::Proven => "proven-eligible",
             Verdict::Refuted => "refuted",
             Verdict::Unknown => "unknown",

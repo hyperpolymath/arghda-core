@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
 # Contributing to arghda-core
 
 arghda-core is the Rust engine for the arghda proof-workspace tool.

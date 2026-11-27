@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: CC-BY-SA-4.0
 https://github.com/sponsors/hyperpolymath[image:https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github[Sponsor]]
 https://www.mozilla.org/MPL/2.0/[image:https://img.shields.io/badge/License-MPL_2.0-blue.svg[License]]
 
