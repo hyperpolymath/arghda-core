@@ -2,7 +2,7 @@
 = Design note: proven-ness derived from receipts
 :toc: macro
 
-Status: *design ruled; implementation not started*. No code is written yet. This note
+Status: *design ruled; receipt reader built, writer not started*. This note
 records the problem, the owner's rulings so far, the evidence from two
 experiments, and the questions still open.
 
@@ -120,10 +120,184 @@ Conclusions:
   A receipt plus a digest comparison costs about 0.2 s at 3000 modules.
 * *Running the prover once at promotion is affordable.* That cost is paid
   once per change, not on every query.
-* *Not measured yet:* how often "in `proven/`" disagrees with "has a
-  matching receipt" on a real workspace. The echo-types corpus is not
-  reachable from the session that wrote this note. That run is the first
-  step of the implementation PR.
+=== echo-types, measured 2026-11-25
+
+`hyperpolymath/echo-types` at `140002f1079a2527301735a3621b169b75df4622`,
+`proofs/agda`, release build. echo-types is *not* an arghda workspace: it has
+no `proven/` directory and no proof-receipt deeds (`docs/receipts/` holds
+logs). So "in `proven/`" against "has a matching receipt" is zero against
+zero there, and cannot be measured as first planned. What was measured:
+
+.Cost of deriving, on a real corpus
+|===
+|Step |Result
+
+|Modules, import edges |152, 552
+|`arghda scan` (lint all modules) |2.06 s
+|`arghda dag` |1.83 s
+|§8.5.1 digest of every module's input set (cone plus `echo-types.agda-lib`) |10–17 ms for all 152
+|Input-set size (files) |min 2, median 5, max 113
+|===
+
+One digest (`AntiEcho`) was recomputed with the standards shell line, which
+takes one path per input line (`printf '%s\n' PATH… | LC_ALL=C sort | xargs
+-d '\n' sha256sum -- | sha256sum`), and matched; the command actually run
+used the same `xargs -d '\n'`. Hashing is
+negligible; the import graph dominates. `dag` took 1.83 s here against
+135 ms for 3000 synthetic modules, so the real files' size, not the module
+count, drives it. That is not yet profiled.
+
+.What a receipt would record (lint pack, all 152 modules)
+|===
+|Finding |Files
+
+|any hard block |12
+|`orphan-module` (hard block) |12
+|`missing-safe-pragma` (hard block) |2
+|`unjustified-postulate` (hard block) |1
+|`unpinned-headline` (warn) |78
+|===
+
+* The two pragma findings and the postulate are the cubical module and the
+  quarantined postulate module that echo-types' own `PROOF-STATUS.adoc`
+  already declares outside the `--without-K` suite. The lint agrees with the
+  repository's own account.
+* Of the 12 orphans, 2 are checked by CI through their own invocations
+  (`NarrowingSmoke` in `scripts/check-grade3.sh`, the cubical module in
+  `.github/workflows/agda.yml`). arghda's default roots (`All`/`Smoke`) do
+  not see those, so a receipt writer must take the CI's entry points
+  (`--entry`) or it will block modules that CI does check.
+* The other 10 are reached by no root and named in no CI file, yet all 10 are
+  named in the docs. One, `EchoFidelity`, is described as "type-checked
+  under Agda 2.6.3 / stdlib 2.3 on 2026-10-19", a dated claim that nothing
+  re-checks. That is the disagreement the receipt rule is for: under
+  receipts, that claim would read `unknown` as soon as an input changed.
+
+.The prover on every module (2026-11-25)
+|===
+|Result |Modules
+
+|Accepted by Agda |151
+|Rejected by Agda |1
+|*Lint-clean but rejected* |*0*
+|Hard-blocked by lint but accepted by Agda |11
+|===
+
+Toolchain exactly as echo-types' CI pins it, through its own
+`scripts/setup-agda.sh`: Agda 2.7.0.1 (release archive SHA-256 checked),
+agda-stdlib `8326c7475af1fa456ca04a0203c168d5d7ff842b`, absolute-zero
+`8a3162a24c8524735b464bedb9747517dc8b0467`. Each of the 152 modules was
+checked on its own with CI's flags (`--safe --without-K
+--cubical-compatible`; `--safe --cubical` for the cubical module), after
+`All.agda` warmed the interface cache (148 s; per-module pass 604 s).
+
+* The one rejection is the quarantined postulate module ("Cannot postulate
+  … with safe flag"), which the lint also hard-blocks.
+* *No module is lint-clean and rejected by Agda.* On this corpus the lint
+  and the prover agree wherever the lint is silent, so the bug that motivates
+  this note (a rejected file read as proven) does not occur here *today*.
+  The rule still matters: nothing re-checks a file once it sits in
+  `proven/`.
+* The 11 hard-blocked modules that Agda accepts are all orphans, among them
+  `EchoFidelity`. Its dated "type-checked" claim is true under 2.7.0.1 today,
+  but no root or receipt records it (departure row in
+  metadatastician/standards#1706).
+
+=== echidna, measured 2026-11-25
+
+`hyperpolymath/echidna` at `14ada6d`, read-only copy, release build of
+arghda. `arghda check --json` ran on all 122 prover files in seven
+backends. Each file ran on its own, with `--include-root` derived from its
+module header. This is the multi-backend corpus that echo-types is not.
+
+.First pass, `arghda check` verdict by backend
+|===
+|Backend |Files |proven-eligible |unknown |refuted |rejected |unavailable
+
+|Agda |26 |0 |0 |0 |26 |0
+|Coq |9 |7 |0 |0 |2 |0
+|Idris2 |38 |36 |0 |0 |2 |0
+|Isabelle |6 |0 |0 |0 |0 |6
+|Lean 4 |16 |1 |12 |0 |3 |0
+|Mizar |5 |1 |0 |0 |4 |0
+|Z3 |22 |15 |0 |7 |0 |0
+|*Total* |*122* |*60* |*12* |*7* |*37* |*6*
+|===
+
+81 of 122 files exit 0, but only 60 are proven-eligible. The 21 that exit 0
+and are not proven-eligible are the point of the verdict layer:
+
+* *7 Z3 files are `sat`*, which means refuted (for example
+  `tests/live_goals/contradiction.smt2` and `proofs/z3/basic.smt2`). A reader
+  that took exit code 0 as "proven" would promote all seven.
+* *12 Lean files read `unknown`.* That is an arghda defect, and it fails
+  closed. The axiom audit looks declarations up by their unqualified names,
+  so it never finds a declaration inside a `namespace`. Checked by hand with
+  qualified names:
+  - `EchidnaPareto.TrustLevel.value_pos` depends on `[propext]`.
+  - `EchidnaPareto.dominates_transitive` depends on `[propext, Quot.sound]`.
+  Both would be Proven. The defect costs completeness, not soundness.
+* *2 Agda files* (`proofs/agda/Basic.agda`, `tests/live_goals/Identity.agda`)
+  exit 0 but are hard-blocked by `missing-safe-pragma`. echidna's CI passes
+  `--safe` on the command line, not in the file. This mirrors echo-types'
+  orphan finding: the lint has to know the CI's invocation, flags as well as
+  entry points, or it blocks files that CI checks under `--safe`.
+
+The 24 other Agda rejections were not proof failures. The first pass ran
+without a UTF-8 locale (Agda exits on the Unicode in the sources) and against
+one stdlib, while echidna pins two Agda tracks. arghda classed the locale
+failure as a rejection, which is a second arghda defect: an environment
+failure reads as a proof failure. Agda was re-run directly on echidna's own
+pins, with `LC_ALL=C.UTF-8`:
+
+.Agda, on echidna's pinned tracks
+|===
+|Track |Toolchain and flags |Files |Accepted
+
+|`meta-checker/` |Agda 2.7.0.1, stdlib v2.1, `--no-default-libraries --library-file … --safe --without-K --cubical-compatible` |10 |10
+|`proofs/agda/` and `tests/` |Agda 2.6.3, stdlib v1.7.3, `--safe --without-K --cubical-compatible` |16 |14
+|===
+
+Both rejections are by design:
+* `tests/live_goals/Broken.agda` is a deliberate type error.
+* `tests/chapel_fixtures/agda_trivial.agda` declares `module Trivial`
+  because echidna's Chapel runner writes it to `Trivial.agda` before checking
+  (`filenameOverride`).
+
+Every Agda module that `docs/PROOF-STATUS.adoc` cites and that exists in this
+tree is accepted on its track. That is 7 modules (5 in the meta-checker,
+`ProofComposition` and `SoundnessPreservation`).
+
+These are prover results, not arghda verdicts. A pinned-toolchain arghda run
+of those 24 files has not been made yet. The stdlib sources were fetched by
+git tag because the release tarballs returned 403 through this session's
+proxy, so the tarball SHA-256 was not checked.
+
+The 11 non-Agda rejections:
+
+|===
+|Cause |Files
+
+|By design: a negative fixture (`tests/live_goals/broken.v`), a renamed fixture (`idris2_trivial.idr`), or a documented non-proof fixture (`tests/fixtures/non-proof/NeSyAssistTesting.idr`, which "does not parse") |3
+|Lean import path: `proofs/lean/ECHIDNA.lean` (`Basic`) and `verification/proofs/lean4/ParetoStrongMaximality.lean` (`ParetoMaximality`) need the sibling modules on the search path, which the per-file run did not supply |2
+|Needs Mathlib (`tests/corpus_fixtures/minif2f/algebra.lean`), which estate policy excludes |1
+|Real failure under Coq 8.18.0: `examples/simple_proof.v`, "Found no subterm matching `m + n' * m`". echidna's dogfood CI prints `coqc --version` but pins no version |1
+|Mizar checker errors (`.err` codes 203, 11, 55, 253), cause not diagnosed |4
+|===
+
+*No file that arghda called proven-eligible is rejected by its prover.* The
+risk on this corpus was the exit-code reading, and the verdict layer caught
+it: 7 refuted files exit 0.
+
+Defects found, to fix in arghda:
+
+* Lean axiom audit: track the `namespace` / `end` stack in `decl_names`.
+* An environment failure, such as a locale error or a missing library, is
+  classed as rejected. It should be its own verdict, as `unavailable` already
+  is.
+* The lint takes no account of the CI's invocation (command-line `--safe`,
+  entry points). A receipt writer must record that invocation anyway
+  (`:invocation`), so the lint should read it from there.
 
 == Design
 
@@ -231,6 +405,41 @@ Checked against standards `1-formats/deed/tools/deed_lint.js`:
   *Ruled 2026-11-25: the first.* The fields are proposed upstream, and the
   linter validates them.
 
+* *Gap 4, non-Agda modules* (found while building the reader,
+  2026-11-25). `deed_lint.js` refuses a `claim` with no `agda` leg, and only
+  the `agda` leg may have `:route source`. Those rules fit theory theorems,
+  where Agda is the source of truth (PROOF-POLICY §2). An arghda workspace
+  can hold Idris2, Lean, Coq, Isabelle, Mizar or SMT modules, whose only leg
+  is not Agda. *Ruled 2026-11-25: both profiles.* The proposal lets a claim
+  in either `workspace-receipt` or `proof-receipt` have the module's own
+  prover as its single leg, which also covers engineering claims (Idris2
+  ABIs, SPARK). This touches the PWG theory rules, so the proposal must keep
+  §8 grading unchanged for theory claims: a claim without an Agda source leg
+  stays `ungraded` and can never derive a `PWG-` grade.
+* *Order (ruled 2026-11-25):* measure echo-types before the proposal goes
+  upstream, so the proposal carries real disagreement numbers.
+
+=== The reader (built 2026-11-25, fixture-first)
+
+`src/receipt/` reads proof-receipt deeds and the proposed shape, and
+derives a module's verdict:
+
+* `sexp.rs` is a small fail-closed reader for the deed syntax.
+* `mod.rs` checks the §8.5.1 manifest rules (bytewise order, no repeats,
+  path rules, 64-hex digests, the digest rebuilt from the manifest), closed
+  field sets, lineage states, and at most one current receipt per leg.
+  `ReceiptDeed::derive` gives `proven` only when the receipt rule holds;
+  anything missing gives `unknown`, and a hard block is never better than
+  `unknown`.
+* The tests cross-check the digest against the standards worked example, cover
+  each refusal for its own reason, and check the rule exhaustively over 320
+  receipt shapes. Nine mutations of the checks were each caught.
+
+Not done yet: the `.arghda/` index, wiring into `workspace_verdicts`, and
+the writer. None of them should land before the standards change, because
+until then every `proven/` file would read `unknown` with no way to
+re-promote it.
+
 === The invariant, and how to prove it
 
 ----
@@ -262,8 +471,8 @@ All six questions were ruled on 2026-11-25 (above). None is open.
   current-behaviour reproduction above as the test.
 . Propose upstream in `metadatastician/standards`, with the reader as
   evidence: the verdict and hard-block fields (gap 3), the
-  workspace-receipt profile (gap 1) and the theorem list (gap 2), with
-  positive and negative `deed_lint.js` tests.
+  workspace-receipt profile (gap 1), the theorem list (gap 2) and single
+  non-Agda legs (gap 4), with positive and negative `deed_lint.js` tests.
 . Receipt writer once the standards change lands: snapshot plus
   digest-twice binding; `promote` gated on `check`; `workspace_verdicts`
   reading receipts; `arghda migrate`.
