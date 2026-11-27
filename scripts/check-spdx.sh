@@ -27,6 +27,7 @@ fail=0
 excluded() {
   case "$1" in
     Cargo.lock | LICENSE) return 0 ;;          # generated lockfile / the licence text itself
+    bun.lock | deno.lock | pnpm-lock.yaml) return 0 ;;  # tool-generated JS lockfiles (LANGUAGE-POLICY 1.4)
     LICENSES/*) return 0 ;;                     # canonical SPDX licence texts (REUSE dir)
     target/* | tests/fixtures/*) return 0 ;;   # build output / Agda test-input data
     *) return 1 ;;
